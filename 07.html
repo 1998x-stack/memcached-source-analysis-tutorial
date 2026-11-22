@@ -5,11 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第7章 内存管理概览：slab allocator设计哲学</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .double-border { max-width: 1400px; margin: 0 auto; }
+        .main-content { min-width: 0; }
+        figure.diagram {
+            margin: 22px 0; padding: 16px 18px; background: #f8fafc;
+            border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto;
+        }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button {
+            font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+            color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5;
+            border-radius: 30px; padding: .3rem 1rem;
+        }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .8rem; color: #64748b; }
+        #cmpSvg .panel-slab, #cmpSvg .panel-malloc { transition: opacity .2s; }
+        #cmpSvg[data-mode="malloc"] .panel-slab { opacity: .22; }
+        #cmpSvg[data-mode="slab"] .panel-malloc { opacity: .22; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +66,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第7章 内存管理概览：slab allocator设计哲学</h1>
 
         <p>大家好，我是你们的讲师。从这一章开始，我们正式进入本课程最核心的部分——<strong>内存管理系统</strong>。如果说 Memcached 是一台汽车，那内存管理就是它的引擎。而 slab allocator 就是这个引擎的核心设计决策。</p>
@@ -74,6 +99,54 @@ for (int i = 0; i < 100000; i++) {
             <strong>对比实验：</strong>有人做过一个经典的 benchmark：在同样的分配/释放模式（模拟缓存 workload）下运行 1 亿次操作后，ptmalloc 的 RSS 比实际使用量高出 40-60%，jemalloc 高出 15-25%，而 Memcached 的 slab allocator 只高出不到 5%。这 5% 还是 slab 内部固有的 chunk 内部碎片。结论很明确：<strong>对于缓存场景，自定义内存分配器是值得的</strong>。
         </div>
 
+        <figure class="diagram" id="fig-frag">
+            <div class="figure-controls">
+                <button type="button" id="cmpMalloc">看 malloc 的碎片</button>
+                <button type="button" id="cmpSlab">看 slab 的分桶</button>
+            </div>
+            <p class="diagram-note" id="cmpNote">malloc：分配大小不一，释放后留下大小不等的空洞，难以合并。</p>
+            <svg id="cmpSvg" data-mode="malloc" viewBox="0 0 760 250" role="img" aria-labelledby="frTitle frDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="frTitle">malloc 碎片与 slab 分桶对比</title>
+                <desc id="frDesc">左侧展示 malloc 释放后形成的大小不一的空洞，右侧展示 slab 固定大小分桶，空闲 chunk 大小一致可直接复用。</desc>
+                <g class="panel-malloc">
+                    <text x="20" y="34" font-size="15" font-weight="700" fill="#991b1b">malloc：外部碎片</text>
+                    <rect x="20" y="90" width="330" height="60" rx="6" fill="#fee2e2"/>
+                    <rect x="20" y="90" width="90" height="60" fill="#94a3b8"/>
+                    <rect x="140" y="90" width="70" height="60" fill="#94a3b8"/>
+                    <rect x="235" y="90" width="60" height="60" fill="#94a3b8"/>
+                    <rect x="295" y="90" width="55" height="60" fill="#94a3b8"/>
+                    <text x="120" y="126" font-size="12" text-anchor="middle" fill="#b91c1c">30B</text>
+                    <text x="216" y="126" font-size="12" text-anchor="middle" fill="#b91c1c">20B</text>
+                    <text x="20" y="176" font-size="13" fill="#7f1d1d">空洞大小不一，无法直接满足下一次分配</text>
+                </g>
+                <g class="panel-slab">
+                    <text x="410" y="34" font-size="15" font-weight="700" fill="#14532d">slab：固定分桶</text>
+                    <g fill="#94a3b8"><rect x="410" y="90" width="40" height="60"/><rect x="452" y="90" width="40" height="60"/><rect x="536" y="90" width="40" height="60"/><rect x="620" y="90" width="40" height="60"/><rect x="662" y="90" width="40" height="60"/></g>
+                    <g fill="#bbf7d0"><rect x="494" y="90" width="40" height="60"/><rect x="578" y="90" width="40" height="60"/></g>
+                    <text x="410" y="176" font-size="13" fill="#166534">空闲 chunk 大小一致，直接复用；无外部碎片</text>
+                </g>
+                <text x="20" y="222" font-size="12" fill="#64748b">灰色 = 已分配，浅色 = 空闲。两侧宽度均代表相同的总内存（教学示意）。</text>
+            </svg>
+            <figcaption><strong>图 7-2　碎片对比（教学示意）。</strong>左边 malloc 释放后留下大小不等、难以合并的空洞（外部碎片）；右边 slab 把内存切成等大的 chunk，任何空闲 chunk 都能直接用于下一次同类分配，不存在外部碎片。图仅示概念，不代表真实内存地址布局。</figcaption>
+        </figure>
+        <script>
+            (function () {
+                var svg = document.getElementById('cmpSvg');
+                var note = document.getElementById('cmpNote');
+                if (!svg || !note) { return; }
+                var texts = {
+                    malloc: 'malloc：分配大小不一，释放后留下大小不等的空洞，难以合并。',
+                    slab: 'slab：内存按固定大小分桶，空闲 chunk 大小一致，可直接复用。'
+                };
+                function set(mode) {
+                    svg.setAttribute('data-mode', mode);
+                    note.textContent = texts[mode];
+                }
+                document.getElementById('cmpMalloc').addEventListener('click', function () { set('malloc'); });
+                document.getElementById('cmpSlab').addEventListener('click', function () { set('slab'); });
+            })();
+        </script>
+
         <h3>Memcached 的解决思路</h3>
 
         <p>Memcached 的思路不是去"改进 malloc"，而是从根本上避免碎片的产生。怎么做？<strong>预分配大小固定的内存块</strong>。所有 chunk 的大小都是预先定义好的（48、60、75、93……），一个 Item 分配时，系统找到第一个能装下它的 chunk 大小，直接返回一个固定大小的内存块。释放时，chunk 回到它所属的 slab class 的空闲链表中，等待下一次同类大小的分配。</p>
@@ -96,28 +169,50 @@ for (int i = 0; i < 100000; i++) {
 
         <p>Memcached 的内存管理是一个经典的三层模型：</p>
 
-        <pre><code>┌─────────────────────────────────────────────────────────┐
-│                    slabclass_t[64]                       │
-│  ┌───────────┐ ┌───────────┐ ┌───────────┐     ┌─────┐ │
-│  │ class 1   │ │ class 2   │ │ class 3   │ ... │class│ │
-│  │ size=96   │ │ size=120  │ │ size=150  │     │ MAX │ │
-│  │ perslab=  │ │ perslab=  │ │ perslab=  │     │     │ │
-│  │ 10922     │ │  8738     │ │  6990     │     │     │ │
-│  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘     └──┬──┘ │
-│        │             │             │              │     │
-│        ▼             ▼             ▼              ▼     │
-│  ┌───────────┐ ┌───────────┐ ┌───────────┐     ┌─────┐ │
-│  │ slab[0]   │ │ slab[0]   │ │ slab[0]   │     │     │ │
-│  │ (1MB)     │ │ (1MB)     │ │ (1MB)     │     │     │ │
-│  │ ┌──┬──┐   │ │ ┌──┬──┐   │ │ ┌──┬──┐   │     │     │ │
-│  │ │c0│c1│…  │ │ │c0│c1│…  │ │ │c0│c1│…  │     │     │ │
-│  │ └──┴──┘   │ │ └──┴──┘   │ │ └──┴──┘   │     │     │ │
-│  │ chunk[0]  │ │ chunk[0]  │ │ chunk[0]  │     │     │ │
-│  │ chunk[1]  │ │ chunk[1]  │ │ chunk[1]  │     │     │ │
-│  │ ...       │ │ ...       │ │ ...       │     │     │ │
-│  │chunk[10921]││chunk[8737] │ │chunk[6989]│     │     │ │
-│  └───────────┘ └───────────┘ └───────────┘     └─────┘ │
-└─────────────────────────────────────────────────────────┘</code></pre>
+                <figure class="diagram" id="fig-three-layer">
+            <svg viewBox="0 0 760 430" role="img" aria-labelledby="tlTitle tlDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="tlTitle">slab allocator 三层模型</title>
+                <desc id="tlDesc">slabclass_t 数组按固定 chunk 大小分桶；每个 class 下有多个 1MB 的 slab page；每个 page 被等分为固定大小的 chunk。</desc>
+                <text x="16" y="26" font-size="17" font-weight="700" fill="#0f172a">三层模型：slabclass → slab(page) → chunk</text>
+                <text x="16" y="52" font-size="13" font-weight="700" fill="#1e40af">① slabclass_t[64]　每个 class 固定一种 chunk 大小</text>
+                <g font-size="13" fill="#1e293b" text-anchor="middle">
+                    <rect x="16" y="60" width="150" height="62" rx="10" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/>
+                    <text x="91" y="84" font-weight="700">class 1</text><text x="91" y="104">size=96　perslab=10922</text>
+                    <rect x="186" y="60" width="150" height="62" rx="10" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/>
+                    <text x="261" y="84" font-weight="700">class 2</text><text x="261" y="104">size=120　perslab=8738</text>
+                    <rect x="356" y="60" width="150" height="62" rx="10" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/>
+                    <text x="431" y="84" font-weight="700">class 3</text><text x="431" y="104">size=150　perslab=6990</text>
+                    <text x="600" y="96" font-size="20" fill="#64748b">…64 个</text>
+                </g>
+                <text x="16" y="158" font-size="13" font-weight="700" fill="#166534">② slab page　每个默认 1MB，可被 -I 修改</text>
+                <g font-size="13" fill="#14532d" text-anchor="middle">
+                    <rect x="16" y="166" width="150" height="34" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/><text x="91" y="188">slab[0] 1MB</text>
+                    <rect x="186" y="166" width="150" height="34" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/><text x="261" y="188">slab[0] 1MB</text>
+                    <rect x="356" y="166" width="150" height="34" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/><text x="431" y="188">slab[0] 1MB</text>
+                </g>
+                <g stroke="#94a3b8" stroke-width="2">
+                    <line x1="91" y1="122" x2="91" y2="166"/><line x1="261" y1="122" x2="261" y2="166"/><line x1="431" y1="122" x2="431" y2="166"/>
+                    <line x1="261" y1="200" x2="261" y2="240"/>
+                </g>
+                <text x="16" y="238" font-size="13" font-weight="700" fill="#7f1d1d">③ chunk　一个 page 被等分为固定大小的 chunk</text>
+                <g>
+                    <rect x="16" y="248" width="150" height="52" rx="8" fill="#fee2e2" stroke="#f87171" stroke-width="2"/><text x="91" y="280" font-size="13" text-anchor="middle" fill="#7f1d1d">chunk</text>
+                    <rect x="186" y="248" width="150" height="52" rx="8" fill="#fee2e2" stroke="#f87171" stroke-width="2"/><text x="261" y="280" font-size="13" text-anchor="middle" fill="#7f1d1d">chunk</text>
+                    <rect x="356" y="248" width="150" height="52" rx="8" fill="#fee2e2" stroke="#f87171" stroke-width="2"/><text x="431" y="280" font-size="13" text-anchor="middle" fill="#7f1d1d">chunk</text>
+                    <text x="600" y="274" font-size="20" text-anchor="middle" fill="#64748b">…</text>
+                </g>
+                <rect x="16" y="322" width="728" height="70" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+                <g fill="#e0f2fe" stroke="#38bdf8">
+                    <rect x="28" y="336" width="52" height="30" rx="4"/><rect x="85" y="336" width="52" height="30" rx="4"/><rect x="142" y="336" width="52" height="30" rx="4"/>
+                    <rect x="199" y="336" width="52" height="30" rx="4"/><rect x="256" y="336" width="52" height="30" rx="4"/><rect x="313" y="336" width="52" height="30" rx="4"/>
+                    <rect x="370" y="336" width="52" height="30" rx="4"/><rect x="427" y="336" width="52" height="30" rx="4"/><rect x="484" y="336" width="52" height="30" rx="4"/>
+                    <rect x="541" y="336" width="52" height="30" rx="4"/><rect x="598" y="336" width="52" height="30" rx="4"/>
+                </g>
+                <text x="660" y="356" font-size="16" fill="#64748b">…</text>
+                <text x="28" y="384" font-size="12" fill="#64748b">一个 slab page 连续切分为 perslab 个等大 chunk（此处示意）。</text>
+            </svg>
+            <figcaption><strong>图 7-1　slab 三层模型。</strong>上层 <code>slabclass_t</code> 按 chunk 大小分桶，中层每个 class 持有若干 1MB 的 slab page，下层 page 被等分为固定大小的 chunk。<code>perslab</code> 数值取自本章 <code>stats slabs</code> 示例，会随 page 大小变化。</figcaption>
+        </figure>
 
         <p>这个三层模型的理解要点：</p>
 
@@ -232,7 +327,7 @@ for (int i = 0; i < 100000; i++) {
             <a href="index.html">📖 返回目录</a>
             <a href="08.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
