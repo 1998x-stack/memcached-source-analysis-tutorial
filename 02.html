@@ -5,11 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第2章 环境搭建与源码获取</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .double-border { max-width: 1400px; margin: 0 auto; }
+        .main-content { min-width: 0; }
+        figure.diagram {
+            margin: 22px 0; padding: 16px 18px; background: #f8fafc;
+            border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto;
+        }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .builder { margin: 20px 0; padding: 16px 18px; background: #f8fafc;
+            border: 1px solid #dbe3ec; border-radius: 16px; }
+        .builder label { display: inline-flex; align-items: center; gap: .35rem;
+            font-size: .88rem; margin: 0 .9rem .4rem 0; color: #334155; }
+        .builder button {
+            font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+            color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5;
+            border-radius: 30px; padding: .3rem 1rem; margin-top: .2rem;
+        }
+        .builder button:hover { background: #dbe8ff; }
+        .builder button:focus-visible, .builder input:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .builder .builder-title { font-weight: 700; color: #0f172a; margin-bottom: .5rem; }
+        .builder pre { margin: .7rem 0 0; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +67,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第2章 环境搭建与源码获取</h1>
 
         <p>大家好，我是你们的讲师。上一章我们聊了为什么要读 Memcached 源码——它的代码量适中、设计思想经典、工程实践丰富。但 "纸上得来终觉浅"——要想真正理解一个系统，光看别人写的分析文章是不够的，你需要在自己的机器上把代码跑起来、打断点、看变量、甚至改几行代码试效果。这一章我们就来做这件事：从零搭建 Memcached 源码阅读环境。</p>
@@ -101,6 +127,33 @@ sudo apt install libevent-dev libssl-dev</code></pre>
 sudo make install</code></pre>
 
         <p>编译过程大约需要 1-2 分钟。如果一切顺利，你会看到一个干净的编译输出，没有 warning。Memcached 的代码质量很高，编译时几乎不会产生警告——这也是其代码风格严谨的一个佐证。</p>
+
+        <figure class="diagram" id="fig-build-flow">
+            <svg viewBox="0 0 760 210" role="img" aria-labelledby="bfTitle bfDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="bfTitle">Memcached autotools 构建流程</title>
+                <desc id="bfDesc">从克隆源码到安装验证的五个阶段：克隆、autoreconf 生成 configure、configure 配置、make 编译安装、运行验证。</desc>
+                <text x="12" y="28" font-size="17" font-weight="700" fill="#0f172a">从源码到可运行：autotools 构建链</text>
+                <g font-size="13" fill="#1e293b" text-anchor="middle">
+                    <rect x="12" y="56" width="128" height="70" rx="12" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/>
+                    <text x="76" y="86" font-size="14" font-weight="600">git clone</text><text x="76" y="108">checkout 1.6.41</text>
+                    <rect x="170" y="56" width="128" height="70" rx="12" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/>
+                    <text x="234" y="86" font-size="14" font-weight="600">autoreconf</text><text x="234" y="108">-fi 生成 configure</text>
+                    <rect x="328" y="56" width="128" height="70" rx="12" fill="#fef9c3" stroke="#facc15" stroke-width="2"/>
+                    <text x="392" y="86" font-size="14" font-weight="600">./configure</text><text x="392" y="108">选特性 / CFLAGS</text>
+                    <rect x="486" y="56" width="128" height="70" rx="12" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/>
+                    <text x="550" y="86" font-size="14" font-weight="600">make</text><text x="550" y="108">make install</text>
+                    <rect x="644" y="56" width="104" height="70" rx="12" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+                    <text x="696" y="86" font-size="14" font-weight="600">memcached</text><text x="696" y="108">-h / stats</text>
+                </g>
+                <g stroke="#475569" stroke-width="2">
+                    <line x1="140" y1="91" x2="164" y2="91"/><line x1="298" y1="91" x2="322" y2="91"/>
+                    <line x1="456" y1="91" x2="480" y2="91"/><line x1="614" y1="91" x2="638" y2="91"/>
+                </g>
+                <text x="392" y="160" font-size="13" text-anchor="middle" fill="#92400e">--enable-extstore / --enable-proxy / --enable-seccomp 在此开关功能模块</text>
+                <text x="392" y="184" font-size="13" text-anchor="middle" fill="#166534">调试构建加 CFLAGS="-g -O0"；发布构建用 -O2</text>
+            </svg>
+            <figcaption><strong>图 2-1　构建链与开关点。</strong>五个阶段中只有 <code>./configure</code> 是可裁剪的——后面章节分析 extstore、proxy 时，对应特性必须在这一步开启；调试符号是否保留也在这里决定。</figcaption>
+        </figure>
 
         <h2>调试环境配置</h2>
 
@@ -235,6 +288,32 @@ make -j$(nproc)</code></pre>
 
         <p>这样所有模块的符号都可用，我们可以随时切到任何模块打点分析。</p>
 
+        <div class="builder" id="configBuilder">
+            <div class="builder-title">试一下：拼出你的 configure 命令</div>
+            <div>
+                <label><input type="checkbox" id="o1" checked> --enable-extstore</label>
+                <label><input type="checkbox" id="o2"> --enable-proxy</label>
+                <label><input type="checkbox" id="o3"> --enable-seccomp</label>
+                <label><input type="checkbox" id="o4"> --enable-tls</label>
+            </div>
+            <button type="button" id="genBtn">生成编译命令</button>
+            <pre id="genOut"><code>./configure CFLAGS="-g -O0"</code></pre>
+            <p class="builder-hint">勾选你要分析的模块，再点按钮拼出完整命令。默认已选 extstore，因为后面的混合存储章节需要它。</p>
+        </div>
+        <script>
+            (function () {
+                var btn = document.getElementById('genBtn');
+                if (!btn) { return; }
+                var opts = [['o1', '--enable-extstore'], ['o2', '--enable-proxy'], ['o3', '--enable-seccomp'], ['o4', '--enable-tls']];
+                btn.addEventListener('click', function () {
+                    var parts = [];
+                    opts.forEach(function (o) { var el = document.getElementById(o[0]); if (el && el.checked) { parts.push(o[1]); } });
+                    var cmd = './configure ' + (parts.length ? parts.join(' ') + ' ' : '') + 'CFLAGS="-g -O0"';
+                    document.getElementById('genOut').textContent = cmd;
+                });
+            })();
+        </script>
+
         <h2>验证安装</h2>
 
         <p>编译安装完成后，验证一下 Memcached 是否能正常启动：</p>
@@ -257,7 +336,7 @@ echo "stats" | nc localhost 11211</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="03.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
