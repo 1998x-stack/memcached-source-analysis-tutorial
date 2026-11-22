@@ -5,11 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第4章 启动流程：main函数逐行解析</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .double-border { max-width: 1400px; margin: 0 auto; }
+        .main-content { min-width: 0; }
+        figure.diagram {
+            margin: 22px 0; padding: 16px 18px; background: #f8fafc;
+            border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto;
+        }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button {
+            font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+            color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5;
+            border-radius: 30px; padding: .3rem 1rem;
+        }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .8rem; color: #64748b; }
+        .step-caption { margin: .5rem 0 0; font-size: .9rem; color: #334155; }
+        #startSvg .step rect { transition: fill .15s; }
+        #startSvg .step.active rect { fill: #fde68a; stroke: #f59e0b; stroke-width: 2.5; }
+        #startSvg .step.active text { fill: #78350f; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +67,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第4章 启动流程：main函数逐行解析</h1>
 
         <p>大家好，我是你们的讲师。前两章我们把源码地图建立起来了，现在是时候上手读第一段真正的代码了。这一章的目标非常明确：<strong>跟着 <code>main()</code> 函数走一遍 Memcached 的完整启动流程</strong>。</p>
@@ -86,6 +112,56 @@
 }</code></pre>
 
         <p>这 9 个步骤对应的就是 Memcached 整个生命周期中的启动阶段。下面我们来逐一细看。</p>
+
+        <figure class="diagram" id="fig-startup">
+            <div class="figure-controls">
+                <button type="button" id="stepPrev">← 上一步</button>
+                <button type="button" id="stepNext">下一步 →</button>
+                <span class="diagram-note">逐步查看 main() 的九个阶段</span>
+            </div>
+            <svg id="startSvg" viewBox="0 0 760 400" role="img" aria-labelledby="stTitle stDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="stTitle">Memcached main() 启动顺序</title>
+                <desc id="stDesc">main() 从 settings_init 到 event_base_loop 的九个启动步骤，可分为配置、进程与信号、子系统初始化、网络与事件循环四个阶段。</desc>
+                <text x="20" y="20" font-size="16" font-weight="700" fill="#0f172a">main() 启动顺序（四个阶段）</text>
+                <g class="step" data-step="1"><rect x="20" y="32" width="700" height="30" rx="8" fill="#eef4ff" stroke="#cbd5e1"/><rect x="20" y="32" width="8" height="30" rx="4" fill="#3b82f6"/><text x="46" y="52" font-size="14" fill="#1e293b">1</text><text x="74" y="52" font-size="15" fill="#1e293b">settings_init　设置默认值</text></g>
+                <g class="step" data-step="2"><rect x="20" y="70" width="700" height="30" rx="8" fill="#eef4ff" stroke="#cbd5e1"/><rect x="20" y="70" width="8" height="30" rx="4" fill="#3b82f6"/><text x="46" y="90" font-size="14" fill="#1e293b">2</text><text x="74" y="90" font-size="15" fill="#1e293b">getopt　解析命令行（-m/-p/-t/-c …）</text></g>
+                <g class="step" data-step="3"><rect x="20" y="108" width="700" height="30" rx="8" fill="#ffe4e6" stroke="#cbd5e1"/><rect x="20" y="108" width="8" height="30" rx="4" fill="#fb7185"/><text x="46" y="128" font-size="14" fill="#1e293b">3</text><text x="74" y="128" font-size="15" fill="#1e293b">daemonize　双 fork 脱离终端（仅 -d）</text></g>
+                <g class="step" data-step="4"><rect x="20" y="146" width="700" height="30" rx="8" fill="#ffe4e6" stroke="#cbd5e1"/><rect x="20" y="146" width="8" height="30" rx="4" fill="#fb7185"/><text x="46" y="166" font-size="14" fill="#1e293b">4</text><text x="74" y="166" font-size="15" fill="#1e293b">signal　注册信号处理（忽略 SIGPIPE）</text></g>
+                <g class="step" data-step="5"><rect x="20" y="184" width="700" height="30" rx="8" fill="#fef9c3" stroke="#cbd5e1"/><rect x="20" y="184" width="8" height="30" rx="4" fill="#facc15"/><text x="46" y="204" font-size="14" fill="#1e293b">5</text><text x="74" y="204" font-size="15" fill="#1e293b">assoc_init　初始化哈希表</text></g>
+                <g class="step" data-step="6"><rect x="20" y="222" width="700" height="30" rx="8" fill="#fef9c3" stroke="#cbd5e1"/><rect x="20" y="222" width="8" height="30" rx="4" fill="#facc15"/><text x="46" y="242" font-size="14" fill="#1e293b">6</text><text x="74" y="242" font-size="15" fill="#1e293b">slabs_init　初始化 slab 分配器</text></g>
+                <g class="step" data-step="7"><rect x="20" y="260" width="700" height="30" rx="8" fill="#fef9c3" stroke="#cbd5e1"/><rect x="20" y="260" width="8" height="30" rx="4" fill="#facc15"/><text x="46" y="280" font-size="14" fill="#1e293b">7</text><text x="74" y="280" font-size="15" fill="#1e293b">thread_init　启动 worker 线程</text></g>
+                <g class="step" data-step="8"><rect x="20" y="298" width="700" height="30" rx="8" fill="#dcfce7" stroke="#cbd5e1"/><rect x="20" y="298" width="8" height="30" rx="4" fill="#4ade80"/><text x="46" y="318" font-size="14" fill="#1e293b">8</text><text x="74" y="318" font-size="15" fill="#1e293b">server_sockets　绑定并监听端口</text></g>
+                <g class="step" data-step="9"><rect x="20" y="336" width="700" height="30" rx="8" fill="#dcfce7" stroke="#cbd5e1"/><rect x="20" y="336" width="8" height="30" rx="4" fill="#4ade80"/><text x="46" y="356" font-size="14" fill="#1e293b">9</text><text x="74" y="356" font-size="15" fill="#1e293b">event_base_loop　进入事件循环</text></g>
+            </svg>
+            <p class="step-caption" id="stepCaption">步骤 1／9：settings_init() 把 maxbytes、maxconns、port、num_threads 等字段写为默认值。</p>
+            <figcaption><strong>图 4-1　启动顺序与四阶段。</strong>左侧色条区分四个阶段：蓝=配置、红=进程与信号、黄=子系统初始化、绿=网络与事件循环。真实源码中步骤 5–7 的调用顺序与图中一致；步骤 3 仅在带 <code>-d</code> 时执行。</figcaption>
+        </figure>
+        <script>
+            (function () {
+                var steps = [].slice.call(document.querySelectorAll('#startSvg .step'));
+                var cap = document.getElementById('stepCaption');
+                var desc = [
+                    'settings_init() 把 maxbytes、maxconns、port、num_threads 等字段写为默认值。',
+                    'getopt() 解析 -m/-p/-t/-c 等选项覆写 settings；-v 可累加提高日志级别。',
+                    'daemonize() 仅当带 -d 时执行第二次 fork + setsid，脱离控制终端。',
+                    'signal() 注册 SIGINT/SIGTERM 优雅退出、SIGHUP 重开日志，并忽略 SIGPIPE。',
+                    'assoc_init() 创建哈希表，默认 65536 个桶（第 13 章展开）。',
+                    'slabs_init() 初始化 slab 分配器与 slabclass 数组（第 8 章展开）。',
+                    'thread_init() 创建 N 个 worker 线程，各自带 event base 与连接队列（第 17 章）。',
+                    'server_sockets() 建 socket、设 SO_REUSEADDR、bind、listen 并注册 accept 事件。',
+                    'event_base_loop() 进入无限事件循环，程序正式开始服务。'
+                ];
+                var i = 0;
+                if (!steps.length || !cap) { return; }
+                function render() {
+                    steps.forEach(function (s, k) { s.classList.toggle('active', k === i); });
+                    cap.textContent = '步骤 ' + (i + 1) + '／' + steps.length + '：' + desc[i];
+                }
+                document.getElementById('stepNext').addEventListener('click', function () { i = (i + 1) % steps.length; render(); });
+                document.getElementById('stepPrev').addEventListener('click', function () { i = (i - 1 + steps.length) % steps.length; render(); });
+                render();
+            })();
+        </script>
 
         <h2>步骤1: settings_init — 设置默认值</h2>
 
@@ -377,7 +453,7 @@ c</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="05.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
