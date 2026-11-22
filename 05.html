@@ -5,11 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第5章 配置系统：settings与命令行</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .double-border { max-width: 1400px; margin: 0 auto; }
+        .main-content { min-width: 0; }
+        figure.diagram {
+            margin: 22px 0; padding: 16px 18px; background: #f8fafc;
+            border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto;
+        }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button {
+            font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+            color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5;
+            border-radius: 30px; padding: .3rem 1rem;
+        }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .8rem; color: #64748b; }
+        .factor-row { display: flex; gap: .6rem; flex-wrap: wrap; margin: .3rem 0; }
+        .factor-row button { font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
+            border: 1px solid #c7d8f5; background: #eef4ff; color: #1e40af; border-radius: 10px; padding: .35rem .9rem; }
+        .factor-row button[aria-pressed="true"] { background: #1e40af; color: #fff; border-color: #1e40af; }
+        .factor-out { margin: .5rem 0 0; font-size: .95rem; color: #0f172a; font-weight: 600; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +68,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第5章 配置系统：settings与命令行</h1>
 
         <p>大家好，我是你们的讲师。上一章我们走了一遍 <code>main()</code> 函数的启动流程，其中一半的代码都在做一件事：解析配置。这一章我们就来深入剖析 Memcached 的配置系统——从 <code>struct settings</code> 的结构体定义，到命令行参数的解析逻辑，再到 <code>-o</code> 扩展选项的设计思路。</p>
@@ -253,6 +280,64 @@ class 63: 48 * 1.25^63 ≈ 137,438,953  → 约 131MB</code></pre>
             <strong>踩坑实录：</strong>我曾经见过一个运维同事把 <code>growth_factor</code> 设成了 1.01——他认为"越精细的内存分配越省内存"。结果呢？slab class 数量直接达到了上限 63 个，每个 class 能分到的 page 数量极少，导致频繁的 slab rebalance，性能反而下降了 30%。而且由于 class 太多，LRU 链表被切割得过于细碎，热点数据命中率也大幅下降。<strong>growth_factor 不是越小越好</strong>，它是一个需要综合考虑的工程参数。
         </div>
 
+        <figure class="diagram" id="fig-growth">
+            <svg viewBox="0 0 760 400" role="img" aria-labelledby="gwTitle gwDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="gwTitle">growth_factor 导致的 chunk 尺寸阶梯与内部碎片</title>
+                <desc id="gwDesc">按公式 chunk=C0·f^i 得到的 chunk 尺寸递增阶梯；一个 80 字节的请求会落到第一个不小于它的 chunk，多出的部分即内部碎片。</desc>
+                <text x="16" y="26" font-size="17" font-weight="700" fill="#0f172a">f = 1.25 时的 chunk 阶梯（C0=48）</text>
+                <g fill="#60a5fa">
+                    <rect x="60" y="301" width="46" height="29" rx="4"/><rect x="124" y="293" width="46" height="37" rx="4"/>
+                    <rect x="188" y="284" width="46" height="46" rx="4"/><rect x="252" y="273" width="46" height="57" rx="4" fill="#facc15"/>
+                    <rect x="316" y="259" width="46" height="71" rx="4"/><rect x="380" y="241" width="46" height="89" rx="4"/>
+                    <rect x="444" y="218" width="46" height="112" rx="4"/><rect x="508" y="191" width="46" height="139" rx="4"/>
+                    <rect x="572" y="155" width="46" height="175" rx="4"/><rect x="636" y="112" width="46" height="218" rx="4"/>
+                </g>
+                <g font-size="13" fill="#334155" text-anchor="middle">
+                    <text x="83" y="350">48</text><text x="147" y="350">60</text><text x="211" y="350">75</text>
+                    <text x="275" y="350" font-weight="700" fill="#854d0e">93</text><text x="339" y="350">117</text>
+                    <text x="403" y="350">146</text><text x="467" y="350">183</text><text x="531" y="350">228</text>
+                    <text x="595" y="350">286</text><text x="659" y="350">357</text>
+                </g>
+                <line x1="40" y1="281" x2="720" y2="281" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6 4"/>
+                <text x="40" y="275" font-size="13" fill="#b91c1c">请求 80 字节</text>
+                <rect x="252" y="273" width="46" height="8" fill="#ef4444"/>
+                <text x="306" y="266" font-size="12" fill="#b91c1c">内部碎片 13B</text>
+                <line x1="40" y1="330" x2="720" y2="330" stroke="#94a3b8" stroke-width="1.5"/>
+                <text x="16" y="384" font-size="12" fill="#64748b">横轴 = slab class 序号；纵轴高度正比于 chunk 尺寸（教学示意，未按真实比例）。</text>
+            </svg>
+            <figcaption><strong>图 5-1　chunk 阶梯与内部碎片。</strong>尺寸按 <code>chunk = C0·f^i</code> 等比增长（这里取前 10 级）。一个 80 字节的 item 无法恰好填满任何一级，会被放进第一个不小于它的 chunk（93 字节），多出的 13 字节就是内部碎片；factor 越大，阶梯越跣，这种浪费越严重。</figcaption>
+        </figure>
+
+        <div class="figure-controls" id="factorPicker">
+            <strong>切换 growth_factor：</strong>
+            <button type="button" data-f="1.10" aria-pressed="false">1.10</button>
+            <button type="button" data-f="1.25" aria-pressed="true">1.25</button>
+            <button type="button" data-f="1.50" aria-pressed="false">1.50</button>
+            <button type="button" data-f="2.00" aria-pressed="false">2.00</button>
+        </div>
+        <p class="factor-out" id="factorOut">factor = 1.25：slab class 约 48 个，最大 chunk 约 131M，最坏内部碎片约 20%（通用推荐默认值）。</p>
+        <script>
+            (function () {
+                var data = {
+                    '1.10': 'factor = 1.10：slab class 约 63 个，最大 chunk 约 1.6M，最坏内部碎片约 9%（适合 value 大小差异小）。',
+                    '1.25': 'factor = 1.25：slab class 约 48 个，最大 chunk 约 131M，最坏内部碎片约 20%（通用推荐默认值）。',
+                    '1.50': 'factor = 1.50：slab class 约 32 个，最大 chunk 约 24G，最坏内部碎片约 33%（适合 value 大小差异很大）。',
+                    '2.00': 'factor = 2.00：slab class 约 24 个，最大 chunk 约 402G，最坏内部碎片约 50%（碎片太多，不推荐）。'
+                };
+                var box = document.getElementById('factorPicker');
+                var out = document.getElementById('factorOut');
+                if (!box || !out) { return; }
+                box.addEventListener('click', function (e) {
+                    var b = e.target.closest('button[data-f]');
+                    if (!b) { return; }
+                    Array.prototype.forEach.call(box.querySelectorAll('button'), function (x) {
+                        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+                    });
+                    out.textContent = data[b.getAttribute('data-f')];
+                });
+            })();
+        </script>
+
         <h2>-o 扩展选项</h2>
 
         <p>随着 Memcached 功能不断增多，简单的单字母参数已经不够用了。<code>-o</code> 选项支持用逗号分隔的 <code>key=value</code> 形式来传递扩展配置：</p>
@@ -337,7 +422,7 @@ memcached</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="06.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
