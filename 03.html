@@ -5,11 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第3章 源码全景：目录结构与模块划分</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .double-border { max-width: 1400px; margin: 0 auto; }
+        .main-content { min-width: 0; }
+        figure.diagram {
+            margin: 22px 0; padding: 16px 18px; background: #f8fafc;
+            border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto;
+        }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button {
+            font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+            color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5;
+            border-radius: 30px; padding: .3rem 1rem;
+        }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .8rem; color: #64748b; }
+        #depSvg .dep-node { transition: opacity .2s; }
+        #depSvg[data-focus="core"] .dep-other { opacity: .22; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +65,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第3章 源码全景：目录结构与模块划分</h1>
 
         <p>大家好，我是你们的讲师。上一章我们把环境搭好了，源码也编译通过了。现在你打开 <code>memcached/</code> 目录，可能会看到一堆 .c 和 .h 文件——别慌，这一章就是来给你一张"源码地图"的。</p>
@@ -173,30 +197,50 @@
 
         <p>理解模块间的调用关系是读懂源码的关键。下面我用文字+箭头的方式描述核心模块之间的依赖关系：</p>
 
-        <pre><code>                       ┌───────────┐
-                       │   main()  │  (memcached.c)
-                       └─────┬─────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-       ┌───────────┐  ┌───────────┐  ┌───────────┐
-       │  thread   │  │  assoc    │  │   slabs   │
-       │ (多线程)   │◄─┤ (哈希表)   │◄─┤ (内存管理) │
-       └─────┬─────┘  └───────────┘  └─────┬─────┘
-             │                              │
-             │                    ┌─────────┼─────────┐
-             ▼                    ▼         ▼         ▼
-       ┌───────────┐       ┌─────────┐ ┌────────┐ ┌────────┐
-       │ libevent  │       │  items  │ │crawler │ │extstore│
-       │ (事件驱动)  │       │ (数据)  │ │(淘汰)  │ │(外部存储)│
-       └───────────┘       └────┬────┘ └────────┘ └────────┘
-                                │
-                                ▼
-                       ┌──────────────────┐
-                       │  proto_text/bin   │
-                       │  (协议解析)        │
-                       └──────────────────┘</code></pre>
+                <figure class="diagram" id="fig-modules">
+            <div class="figure-controls">
+                <button type="button" id="depToggle" aria-pressed="false">只看核心三件套</button>
+                <span class="diagram-note">slabs / assoc / items 是全书主线</span>
+            </div>
+            <svg id="depSvg" data-focus="all" viewBox="0 0 760 420" role="img" aria-labelledby="depTitle depDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="depTitle">Memcached 核心模块依赖关系</title>
+                <desc id="depDesc">main 驱动 thread、assoc、slabs；slabs 与 assoc 分别负责内存分配与哈希索引，items 连接两者并供协议层调用。</desc>
+                <defs><marker id="p3Arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#64748b"/></marker></defs>
+                <g class="dep-other"><rect x="300" y="18" width="160" height="48" rx="12" fill="#1e293b"/><text x="380" y="49" font-size="17" fill="#f8fafc" text-anchor="middle">main()</text></g>
+                <g class="dep-other"><rect x="60" y="110" width="150" height="56" rx="12" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/><text x="135" y="144" font-size="16" text-anchor="middle" fill="#334155">thread 多线程</text></g>
+                <g class="dep-core"><rect x="305" y="110" width="150" height="56" rx="12" fill="#fef9c3" stroke="#facc15" stroke-width="2"/><text x="380" y="144" font-size="16" text-anchor="middle" fill="#713f12">assoc 哈希表</text></g>
+                <g class="dep-core"><rect x="550" y="110" width="150" height="56" rx="12" fill="#fef9c3" stroke="#facc15" stroke-width="2"/><text x="625" y="144" font-size="16" text-anchor="middle" fill="#713f12">slabs 内存</text></g>
+                <g class="dep-other"><rect x="60" y="228" width="150" height="56" rx="12" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/><text x="135" y="262" font-size="16" text-anchor="middle" fill="#334155">libevent</text></g>
+                <g class="dep-core"><rect x="305" y="228" width="150" height="56" rx="12" fill="#fef9c3" stroke="#facc15" stroke-width="2"/><text x="380" y="262" font-size="16" text-anchor="middle" fill="#713f12">items 数据</text></g>
+                <g class="dep-other"><rect x="545" y="228" width="95" height="56" rx="12" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/><text x="592" y="262" font-size="15" text-anchor="middle" fill="#334155">crawler</text></g>
+                <g class="dep-other"><rect x="650" y="228" width="95" height="56" rx="12" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/><text x="697" y="262" font-size="15" text-anchor="middle" fill="#334155">extstore</text></g>
+                <g class="dep-other"><rect x="260" y="346" width="240" height="56" rx="12" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2"/><text x="380" y="380" font-size="16" text-anchor="middle" fill="#0c4a6e">proto_text / proto_bin</text></g>
+                <g stroke="#64748b" stroke-width="2" fill="none">
+                    <path d="M340 66 L160 106" marker-end="url(#p3Arrow)"/>
+                    <path d="M380 66 L380 106" marker-end="url(#p3Arrow)"/>
+                    <path d="M420 66 L600 106" marker-end="url(#p3Arrow)"/>
+                    <path d="M135 166 L135 224" marker-end="url(#p3Arrow)"/>
+                    <path d="M380 166 L380 224" marker-end="url(#p3Arrow)"/>
+                    <path d="M610 166 L596 224" marker-end="url(#p3Arrow)"/>
+                    <path d="M640 166 L692 224" marker-end="url(#p3Arrow)"/>
+                    <path d="M380 284 L380 342" marker-end="url(#p3Arrow)"/>
+                </g>
+            </svg>
+            <figcaption><strong>图 3-1　核心模块依赖。</strong>main 启动时依次拉起线程池、哈希表与 slab 分配器；<code>items</code> 是连接 slabs（放哪儿）与 assoc（在哪儿）的桥梁，协议层最终都落到对 items + assoc 的操作。依赖方向与源码调用一致，但为可读性省略了次要边。</figcaption>
+        </figure>
+        <script>
+            (function () {
+                var btn = document.getElementById('depToggle');
+                var svg = document.getElementById('depSvg');
+                if (!btn || !svg) { return; }
+                btn.addEventListener('click', function () {
+                    var on = svg.getAttribute('data-focus') === 'core';
+                    svg.setAttribute('data-focus', on ? 'all' : 'core');
+                    btn.textContent = on ? '只看核心三件套' : '显示全部模块';
+                    btn.setAttribute('aria-pressed', on ? 'false' : 'true');
+                });
+            })();
+        </script>
 
         <p>从这张图可以看到：<strong>slabs 和 assoc 是 Memcached 的两个基石</strong>，一个管"放哪儿"（内存分配），一个管"在哪儿"（哈希索引）。items 是连接这两者的桥梁——它从 slabs 拿内存，在 assoc 注册索引，自身维护 LRU 链表。所有的协议处理（proto_text / proto_bin）最终都转化为对 items + assoc 的操作。</p>
 
@@ -283,6 +327,27 @@ cloc memcached.c memcached.h slabs.c items.c assoc.c \
             </tbody>
         </table>
 
+        <figure class="diagram" id="fig-cloc">
+            <svg viewBox="0 0 760 380" role="img" aria-labelledby="clTitle clDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="clTitle">Memcached 主要文件代码行数分布</title>
+                <desc id="clDesc">条形图展示主要源文件的大致代码行数，memcached.c 最多，其后为其余模块合计与各核心文件。</desc>
+                <text x="16" y="30" font-size="17" font-weight="700" fill="#0f172a">代码行数分布（约，行）</text>
+                <g font-size="14" fill="#1e293b">
+                    <text x="16" y="75">memcached.c</text><rect x="170" y="56" width="520" height="24" rx="5" fill="#3b82f6"/><text x="698" y="74" font-size="13" fill="#1e40af">6000</text>
+                    <text x="16" y="111">其他模块</text><rect x="170" y="92" width="347" height="24" rx="5" fill="#94a3b8"/><text x="525" y="110" font-size="13" fill="#475569">4000</text>
+                    <text x="16" y="147">proto_text.c</text><rect x="170" y="128" width="191" height="24" rx="5" fill="#60a5fa"/><text x="369" y="146" font-size="13" fill="#1e40af">2200</text>
+                    <text x="16" y="183">proto_bin.c</text><rect x="170" y="164" width="156" height="24" rx="5" fill="#60a5fa"/><text x="334" y="182" font-size="13" fill="#1e40af">1800</text>
+                    <text x="16" y="219">slabs.c</text><rect x="170" y="200" width="130" height="24" rx="5" fill="#facc15"/><text x="308" y="218" font-size="13" fill="#854d0e">1500</text>
+                    <text x="16" y="255">items.c</text><rect x="170" y="236" width="104" height="24" rx="5" fill="#facc15"/><text x="282" y="254" font-size="13" fill="#854d0e">1200</text>
+                    <text x="16" y="291">memcached.h</text><rect x="170" y="272" width="87" height="24" rx="5" fill="#a78bfa"/><text x="265" y="290" font-size="13" fill="#5b21b6">1000</text>
+                    <text x="16" y="327">thread.c</text><rect x="170" y="308" width="69" height="24" rx="5" fill="#34d399"/><text x="247" y="326" font-size="13" fill="#047857">800</text>
+                </g>
+                <line x1="170" y1="46" x2="170" y2="340" stroke="#cbd5e1" stroke-width="1"/>
+                <text x="16" y="364" font-size="12" fill="#64748b">教学示意：行数为本章 cloc 统计的约数，会随版本浮动。</text>
+            </svg>
+            <figcaption><strong>图 3-2　代码量分布。</strong><code>memcached.c</code> 一个文件就占了约三成，但真正需要精读的是被标注出的几条主线（蓝色=协议/主干、黄色=内存管理、紫色=头文件）。总量约 2 万行，核心只有一万多行，这是它适合作教材的关键。</figcaption>
+        </figure>
+
         <p>看到这个数据你就明白了：<strong>Memcached 整个项目大约 2 万行代码</strong>，其中核心的 1 万行集中在 5-6 个文件中。这意味着每个文件的代码量控制得非常好——<code>assoc.c</code> 只有 500 行，一个下午就能读完。相比之下，Redis 的 <code>server.c</code> 就有 1.5 万行，Netty 的 <code>NioEventLoop.java</code> 也有 2000+ 行。Memcached 的这种"小而美"的特质正是它适合做源码教材的原因。</p>
 
         <div class="tip">
@@ -334,7 +399,7 @@ cloc memcached.c memcached.h slabs.c items.c assoc.c \
             <a href="index.html">📖 返回目录</a>
             <a href="04.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
