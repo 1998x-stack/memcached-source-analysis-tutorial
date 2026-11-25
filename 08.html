@@ -319,13 +319,12 @@ if (size % CHUNK_ALIGN_BYTES)
                 }
                 document.getElementById('freeNext').addEventListener('click', function () { if (step < 3) { step++; render(); } });
                 document.getElementById('freePrev').addEventListener('click', function () { if (step > 0) { step--; render(); } });
-                document.getElementById('freePrev').addEventListener('click', function () { if (step > 0) { step--; render(); } });
                 document.getElementById('freeReset').addEventListener('click', function () { step = 0; render(); });
                 render();
             })();
         </script>
 
-        <p>这种“内存即元数据”的设计在操作系统内核中很常见(比如 Linux slab allocator),但在用户态程序中并不普遍。Memcached 把它运用到了极致。</p>
+        <p>这种"内存即元数据"的设计在操作系统内核中很常见（比如 Linux slab allocator），但在用户态程序中并不普遍。Memcached 把它运用到了极致。</p>
 
         <div class="highlight">
             <strong>设计精髓：</strong>slab allocator 的 slots 空闲链表是一个"隐式链表"——它不额外占用任何内存。每个空闲 chunk 的头部几个字节（恰好是 item->next 指针的位置）被重用来指向下一个空闲 chunk。分配时 O(1) 出栈，释放时 O(1) 入栈。这正是 slab allocator 比通用 malloc 快得多的根本原因之一。
