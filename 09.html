@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第9章 Slab Allocator回收与平衡</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        #migSvg .stepnode { opacity: .22; transition: opacity .2s; }
+        #migSvg .stepnode.on { opacity: 1; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第9章 Slab Allocator回收与平衡</h1>
 
         <p>大家好，我是你们的讲师。上一章我们学会了怎么从 slab allocator 里"拿"内存——从 slots 空闲链表取，从当前 page 切，或者向操作系统申请新的 page。但拿出去的内存终究要还回来——当一个 item 过期被删除时，它占用的 chunk 必须回到空闲链表中，否则内存很快会被耗尽。</p>
@@ -159,6 +176,55 @@
 
         <p>这个过程可能导致短暂的访问延迟增加——我们会在后面的踩坑故事中详细展开。</p>
 
+        <figure class="diagram" id="fig-migrate">
+            <div class="figure-controls">
+                <button type="button" id="migPrev">← 上一步</button>
+                <button type="button" id="migNext">下一步 →</button>
+                <button type="button" id="migReset">重置</button>
+            </div>
+            <p class="diagram-note" id="migNote">点击“下一步”逐步观察一次 slab page 迁移的四个阶段。</p>
+            <svg id="migSvg" viewBox="0 0 760 210" role="img" aria-labelledby="migTitle migDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="migTitle">slab_rebalance 一次 page 迁移的四个阶段</title>
+                <desc id="migDesc">四个阶段依次为：触发 reassign、持有 cache_lock、驱逐页上活跃 item、将 page 重新切割到目标 class。</desc>
+                <defs><marker id="mar" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <g class="stepnode" id="s1"><rect x="20" y="60" width="170" height="100" rx="12" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/><text x="105" y="92" font-size="13" font-weight="700" fill="#1e3a8a" text-anchor="middle">① 触发</text><text x="105" y="116" font-size="11" fill="#334155" text-anchor="middle">slabs_reassign</text><text x="105" y="134" font-size="11" fill="#334155" text-anchor="middle">(src → dst)</text></g>
+                <g class="stepnode" id="s2"><rect x="208" y="60" width="170" height="100" rx="12" fill="#eef4ff" stroke="#93b4e8" stroke-width="2"/><text x="293" y="92" font-size="13" font-weight="700" fill="#1e3a8a" text-anchor="middle">② 加锁</text><text x="293" y="116" font-size="11" fill="#334155" text-anchor="middle">持有 cache_lock</text><text x="293" y="134" font-size="11" fill="#334155" text-anchor="middle">全局互斥</text></g>
+                <g class="stepnode" id="s3"><rect x="396" y="60" width="170" height="100" rx="12" fill="#fee2e2" stroke="#f87171" stroke-width="2"/><text x="481" y="92" font-size="13" font-weight="700" fill="#991b1b" text-anchor="middle">③ 驱逐</text><text x="481" y="116" font-size="11" fill="#7f1d1d" text-anchor="middle">遍历 page 上</text><text x="481" y="134" font-size="11" fill="#7f1d1d" text-anchor="middle">活跃 item</text></g>
+                <g class="stepnode" id="s4"><rect x="584" y="60" width="156" height="100" rx="12" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/><text x="662" y="92" font-size="13" font-weight="700" fill="#14532d" text-anchor="middle">④ 重切分</text><text x="662" y="116" font-size="11" fill="#14532d" text-anchor="middle">page 归入 dst</text><text x="662" y="134" font-size="11" fill="#14532d" text-anchor="middle">按新 size 切割</text></g>
+                <g stroke="#64748b" stroke-width="2" marker-end="url(#mar)"><line x1="190" y1="110" x2="204" y2="110"/><line x1="378" y1="110" x2="392" y2="110"/><line x1="566" y1="110" x2="580" y2="110"/></g>
+                <text x="20" y="186" font-size="11" fill="#64748b">整个 ②→④ 阶段均在 cache_lock 保护下进行（教学示意，阶段划分依据本章 slab_rebalance_thread 流程）。</text>
+            </svg>
+            <figcaption><strong>图 9-1　一次 page 迁移的四个阶段（流程示意）。</strong>迁移由后台 <code>slab_rebalance_thread</code> 驱动：先被 <code>slabs_reassign</code> 唤醒，再持有全局 <code>cache_lock</code>，驱逐选定 page 上的活跃 item，最后把该 page 按目标 class 的 chunk 大小重新切割。阶段 ②→④ 全程持锁，这正是迁移期间延迟抖动被放大的原因。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('migSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('migNote');
+                var nodes = ['s1', 's2', 's3', 's4'];
+                var msgs = [
+                    '点击“下一步”逐步观察一次 slab page 迁移的四个阶段。',
+                    '① 触发：slabs_reassign(src, dst) 唤醒后台线程。',
+                    '② 加锁：后台线程获取全局 cache_lock。',
+                    '③ 驱逐：遍历 page 上的活跃 item，标记其可被回收。',
+                    '④ 重切分：page 归入 dst class，按新 chunk size 切割。'
+                ];
+                var step = 0;
+                function render() {
+                    [].forEach.call(svg.querySelectorAll('.stepnode'), function (g) { g.classList.remove('on'); });
+                    for (var i = 0; i < nodes.length; i++) {
+                        if (i < step) { document.getElementById(nodes[i]).classList.add('on'); }
+                    }
+                    note.textContent = msgs[step];
+                }
+                document.getElementById('migNext').addEventListener('click', function () { if (step < 4) { step++; render(); } });
+                document.getElementById('migPrev').addEventListener('click', function () { if (step > 0) { step--; render(); } });
+                document.getElementById('migReset').addEventListener('click', function () { step = 0; render(); });
+                render();
+            })();
+        </script>
+
         <div class="tip">
             <strong>为什么需要后台线程？</strong>因为 slab rebalance 是一个慢操作——它可能需要遍历整个 page（1MB）上的所有 chunk，逐个检查状态。如果在 worker 线程中同步完成，会阻塞所有请求处理。所以 Memcached 用一个独立的后台线程来做这件事，通过 <code>pthread_cond_wait</code> 等待触发信号。
         </div>
@@ -234,6 +300,38 @@
             <li><strong>阈值保护</strong>：只有源和目标的空闲比例差异超过阈值时，才触发迁移。这防止了"频繁震荡"——在稳定状态下，小幅波动不应该触发 page 迁移。</li>
         </ul>
 
+        <figure class="diagram" id="fig-automove">
+            <svg viewBox="0 0 760 268" role="img" aria-labelledby="amTitle amDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="amTitle">slab_automove 按空闲比例选择源与目标 class</title>
+                <desc id="amDesc">横向柱状图展示各级 slab class 的空闲比例；空闲比例最高的 class 1 被选为源，最低的 class 8 被选为目标，二者差异超过阈值才触发迁移。</desc>
+                <text x="16" y="22" font-size="14" font-weight="700" fill="#0f172a">按空闲比例选源/目标（数值为教学示意）</text>
+                <g font-size="11" fill="#334155" text-anchor="end">
+                    <text x="100" y="52">class 1</text><text x="100" y="78">class 2</text><text x="100" y="104">class 3</text><text x="100" y="130">class 4</text>
+                    <text x="100" y="156">class 5</text><text x="100" y="182">class 6</text><text x="100" y="208">class 7</text><text x="100" y="234">class 8</text>
+                </g>
+                <g stroke="#e2e8f0" stroke-width="2"><line x1="110" y1="40" x2="110" y2="244"/><line x1="700" y1="40" x2="700" y2="244"/></g>
+                <g>
+                    <rect x="110" y="40" width="554" height="16" fill="#86efac" stroke="#16a34a"/>
+                    <rect x="110" y="66" width="469" height="16" fill="#bfdbfe" stroke="#60a5fa"/>
+                    <rect x="110" y="92" width="416" height="16" fill="#bfdbfe" stroke="#60a5fa"/>
+                    <rect x="110" y="118" width="290" height="16" fill="#bfdbfe" stroke="#60a5fa"/>
+                    <rect x="110" y="144" width="198" height="16" fill="#bfdbfe" stroke="#60a5fa"/>
+                    <rect x="110" y="170" width="112" height="16" fill="#bfdbfe" stroke="#60a5fa"/>
+                    <rect x="110" y="196" width="53" height="16" fill="#bfdbfe" stroke="#60a5fa"/>
+                    <rect x="110" y="222" width="20" height="16" fill="#fca5a5" stroke="#dc2626"/>
+                </g>
+                <g font-size="11" font-weight="600">
+                    <text x="672" y="53" fill="#166534">84%</text><text x="587" y="79" fill="#1e40af">71%</text>
+                    <text x="534" y="105" fill="#1e40af">63%</text><text x="408" y="131" fill="#1e40af">44%</text>
+                    <text x="316" y="157" fill="#1e40af">30%</text><text x="230" y="183" fill="#1e40af">17%</text>
+                    <text x="171" y="209" fill="#1e40af">8%</text><text x="138" y="235" fill="#b91c1c">3%</text>
+                </g>
+                <text x="110" y="260" font-size="11" fill="#166534">绿：空闲比例最高 → 候选源（src）</text>
+                <text x="470" y="260" font-size="11" fill="#b91c1c">红：最低且 slabs&gt;1 → 候选目标（dst）</text>
+            </svg>
+            <figcaption><strong>图 9-2　automove 选择源/目标（决策示意，数值为教学示意）。</strong>决策看的是<strong>空闲比例</strong>而非空闲绝对数：图中 class 1 空闲比例最高，成为候源；class 8 最低，成为候目标。只有两者差值超过阈值时才真正触发 <code>slabs_reassign</code>，以避免稳定状态下的小幅波动引发频繁震荡。具体阈值与周期见本章正文。</figcaption>
+        </figure>
+
         <div class="highlight">
             <strong>设计哲学：</strong>slab_automove 的设计目标不是"最优平衡"，而是"防止极端不平衡"。因为每次迁移都有代价——锁定全局锁、遍历 page 上的所有 chunk、可能导致部分请求延迟增加。频繁迁移对性能的损害比轻微不平衡更大。"少移动，移动对了"比"频繁移动"要好得多。
         </div>
@@ -292,7 +390,7 @@
             <a href="index.html">📖 返回目录</a>
             <a href="10.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
