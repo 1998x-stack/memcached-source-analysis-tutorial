@@ -5,11 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第13章 哈希表：assoc模块详解</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        #delSvg .dnode { opacity: .35; transition: opacity .2s; }
+        #delSvg .dnode.on { opacity: 1; }
+        #delSvg .dnode.gone { opacity: 0; }
+        #delSvg .dmark { opacity: 0; transition: opacity .2s; }
+        #delSvg .dmark.on { opacity: 1; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +63,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第13章 哈希表：assoc模块详解</h1>
 
         <p>大家好，我是你们的讲师。过去几章我们花了大量精力在内存管理上——从 slab allocator 到 item 结构体再到 LRU 淘汰。但 Memcached 作为 KV 缓存，最核心的操作是：<strong>通过 key 找到 value</strong>。这个"查找"的功能就是由 <code>assoc</code>（association）模块实现的。</p>
@@ -94,6 +116,34 @@ typedef struct _stritem {
         </ul>
 
         <p>这种"双重存在"的设计是 Memcached 中的一个重要思想：item 不"属于"任何一个数据结构，而是同时参与了多个数据结构。有点像数据库中的"多索引"概念——一条记录可以同时被 B+ 树索引和哈希索引引用。item 的 <code>next</code>/<code>prev</code> 是 LRU 索引，<code>h_next</code> 是哈希索引。</p>
+
+        <figure class="diagram" id="fig-hash">
+            <svg viewBox="0 0 760 280" role="img" aria-labelledby="hashTitle hashDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="hashTitle">primary_hashtable 桶数组与链地址法</title>
+                <desc id="hashDesc">哈希值取低位得到桶索引，桶指向一条由 h_next 串联的单向链表；每个 item 同时还通过 next/prev 挂在 LRU 链表上。</desc>
+                <defs><marker id="hmk" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#2563eb"/></marker></defs>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">桶数组 + 链地址法（hash &amp; hashmask 定位桶）</text>
+                <g font-size="11" fill="#334155">
+                    <rect x="40" y="50" width="130" height="30" fill="#f1f5f9" stroke="#cbd5e1"/><text x="105" y="70" text-anchor="middle">bucket 0</text>
+                    <rect x="40" y="82" width="130" height="30" fill="#f1f5f9" stroke="#cbd5e1"/><text x="105" y="102" text-anchor="middle">bucket 1</text>
+                    <rect x="40" y="114" width="130" height="30" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/><text x="105" y="134" text-anchor="middle" font-weight="700" fill="#1e3a8a">bucket 2 (hv&amp;mask)</text>
+                    <rect x="40" y="146" width="130" height="30" fill="#f1f5f9" stroke="#cbd5e1"/><text x="105" y="166" text-anchor="middle">bucket 3</text>
+                    <rect x="40" y="178" width="130" height="30" fill="#f1f5f9" stroke="#cbd5e1"/><text x="105" y="198" text-anchor="middle">bucket …</text>
+                </g>
+                <line x1="172" y1="129" x2="268" y2="129" stroke="#2563eb" stroke-width="2" marker-end="url(#hmk)"/>
+                <g fill="#dcfce7" stroke="#4ade80" stroke-width="2">
+                    <rect x="280" y="106" width="120" height="46" rx="8"/><rect x="430" y="106" width="120" height="46" rx="8"/><rect x="580" y="106" width="120" height="46" rx="8"/>
+                </g>
+                <g font-size="12" fill="#14532d" text-anchor="middle"><text x="340" y="134">item C</text><text x="490" y="134">item B</text><text x="640" y="134">item A</text></g>
+                <g stroke="#16a34a" stroke-width="2" marker-end="url(#hmk)"><line x1="400" y1="129" x2="426" y2="129"/><line x1="550" y1="129" x2="576" y2="129"/></g>
+                <text x="710" y="134" font-size="12" fill="#64748b">NULL</text>
+                <text x="280" y="100" font-size="10" fill="#166534">h_next（头插法）</text>
+                <rect x="280" y="188" width="420" height="62" rx="10" fill="#fef9c3" stroke="#facc15"/>
+                <text x="490" y="212" font-size="11" fill="#854d0e" text-anchor="middle">每个 item 同时由 next / prev 挂在 LRU 双向上</text>
+                <text x="490" y="234" font-size="11" fill="#854d0e" text-anchor="middle">同一个 item 既在哈希链上，也在 LRU 链上（双索引）</text>
+            </svg>
+            <figcaption><strong>图 13-1　桶数组与链地址法（结构示意）。</strong><code>hash &amp; hashmask(hashpower)</code> 取哈希值低位得到桶索引，桶头指向一条由 <code>h_next</code> 串成的单向链表；新 item 用头插法插入。同一个 item 并不“属于”某个结构——它同时通过 <code>h_next</code> 挂在哈希桶里、通过 <code>next/prev</code> 挂在 LRU 链表上，这也是为什么查找与淘汰可以各自独立进行。</figcaption>
+        </figure>
 
         <h2>assoc_find()：逐行解析</h2>
 
@@ -198,6 +248,59 @@ typedef struct _stritem {
     }
 }</code></pre>
 
+        <figure class="diagram" id="fig-delete">
+            <div class="figure-controls">
+                <button type="button" id="delPrev">← 上一步</button>
+                <button type="button" id="delNext">下一步 →</button>
+                <button type="button" id="delReset">重置</button>
+            </div>
+            <p class="diagram-note" id="delNote">从桶头开始，用二级指针 prev 逐节点比较，寻找要删除的 key（这里目标是 C）。</p>
+            <svg id="delSvg" viewBox="0 0 760 200" role="img" aria-labelledby="delTitle delDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="delTitle">assoc_delete 的二级指针遍历删除</title>
+                <desc id="delDesc">prev 指向当前节点的前驱 h_next 字段，it 指向当前节点；找到 C 后用 *prev = C-&gt;h_next 把 C 从链上摘除。</desc>
+                <defs><marker id="dmk" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#475569"/></marker><marker id="dmk2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#dc2626"/></marker></defs>
+                <text x="50" y="112" font-size="12" fill="#475569">bucket ─→</text>
+                <g class="dnode" id="nd0"><rect x="140" y="80" width="110" height="52" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/><text x="195" y="112" font-size="13" text-anchor="middle">A</text></g>
+                <g class="dnode" id="nd1"><rect x="290" y="80" width="110" height="52" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/><text x="345" y="112" font-size="13" text-anchor="middle">B</text></g>
+                <g class="dnode" id="nd2"><rect x="440" y="80" width="110" height="52" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/><text x="495" y="112" font-size="13" text-anchor="middle">C（待删）</text></g>
+                <g class="dnode" id="nd3"><rect x="590" y="80" width="110" height="52" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/><text x="645" y="112" font-size="13" text-anchor="middle">D</text></g>
+                <g stroke="#475569" stroke-width="2" marker-end="url(#dmk)"><line x1="252" y1="106" x2="286" y2="106"/><line x1="402" y1="106" x2="436" y2="106"/><line x1="552" y1="106" x2="586" y2="106"/></g>
+                <g id="eSplice" class="dmark"><path d="M402,78 C440,20 552,20 586,78" fill="none" stroke="#dc2626" stroke-width="2" marker-end="url(#dmk2)"/><text x="495" y="30" font-size="11" fill="#dc2626" text-anchor="middle">*prev = C-&gt;h_next（B 直连 D）</text></g>
+            </svg>
+            <figcaption><strong>图 13-2　二级指针遍历删除（算法示意）。</strong><code>prev</code> 并不指向节点，而是指向“当前节点的前驱 <code>h_next</code> 字段地址”。这样无论要删的是不是头节点，都用同一句 <code>*prev = it-&gt;h_next</code> 完成摘除，无需为头节点写特殊分支。点击“下一步”逐步跟踪。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('delSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('delNote');
+                var nodes = ['nd0', 'nd1', 'nd2'];
+                var msgs = [
+                    '从桶头开始，用二级指针 prev 逐节点比较，寻找要删除的 key（这里目标是 C）。',
+                    'step 1：prev = &bucket；it = A，A 不匹配。',
+                    'step 2：prev = &A.h_next；it = B，B 不匹配。',
+                    'step 3：prev = &B.h_next；it = C，匹配！执行 *prev = C->h_next，B 直连 D。'
+                ];
+                var step = 0;
+                function render() {
+                    for (var i = 0; i < 4; i++) { document.getElementById('nd' + i).className.baseVal = 'dnode'; }
+                    document.getElementById('eSplice').className.baseVal = 'dmark';
+                    if (step < 3) {
+                        document.getElementById('nd' + step).classList.add('on');
+                    } else {
+                        document.getElementById('nd2').classList.add('gone');
+                        document.getElementById('eSplice').classList.add('on');
+                    }
+                    note.textContent = msgs[step];
+                }
+                document.getElementById('delNext').addEventListener('click', function () { if (step < 3) { step++; render(); } });
+                document.getElementById('delPrev').addEventListener('click', function () { if (step > 0) { step--; render(); } });
+                document.getElementById('delReset').addEventListener('click', function () { step = 0; render(); });
+                render();
+            })();
+        </script>
+
         <p>二级指针的技巧：<code>prev</code> 指向"当前节点的前一个节点的 h_next 字段"（或者头指针本身）。当找到要删除的节点时，<code>*prev = it->h_next</code> 直接修改前一个节点的 h_next（或者桶的头指针），将当前节点从链表中摘除。这个写法避免了"如果删除的是头节点，需要单独处理"的分支逻辑——比经典的双指针 prev/curr 遍历更简洁。</p>
 
         <h2>Hash 函数：从 Jenkins 到 MurmurHash3</h2>
@@ -278,7 +381,7 @@ static uint32_t (*hash_fn)(const void *key, size_t length) = NULL;</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="14.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
