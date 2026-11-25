@@ -5,11 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第12章 LRU淘汰机制：三级队列</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        #bumpSvg .qnode { opacity: .3; transition: opacity .2s; }
+        #bumpSvg .qnode.on { opacity: 1; }
+        #bumpSvg .qedge { opacity: .25; transition: opacity .2s; }
+        #bumpSvg .qedge.on { opacity: 1; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +62,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第12章 LRU淘汰机制：三级队列</h1>
 
         <p>大家好，我是你们的讲师。上一章我们追踪了一个 item 从分配到被访问再到被删除的完整生命周期。在这个过程中，有一个关键环节我们刻意说得比较含糊——"将 item 插入 LRU 链表"。为什么不直接说"插到链表头部"？</p>
@@ -105,6 +126,24 @@
         <p>每个 slab class 都独立维护这四条 LRU 链表。也就是说，一个 slab allocator 的 49 个 class × 4 条队列 = 196 条 LRU 链表同时工作。这使得不同大小的 item 在各自的尺寸范围内独立进行淘汰决策，互不干扰。</p>
 
         <p>TEMP_LRU 是一个特殊的优化：如果你设置的 TTL ≤ 61 秒，item 会直接进入 TEMP_LRU。这个队列中的 item 不做升降级操作——它们到期自动过期或被淘汰。因为短 TTL 的 item"不值得"做热度分析——它们很快就会被淘汰，不值得为了"是否应该升温"而消耗 CPU。</p>
+
+        <figure class="diagram" id="fig-lru">
+            <svg viewBox="0 0 760 320" role="img" aria-labelledby="lruTitle lruDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="lruTitle">每个 slab class 独立的四条 LRU 队列</title>
+                <desc id="lruDesc">HOT、WARM、COLD、TEMP 四条链表平行排布，新 item 从 head 插入，淘汰从 tail 取出；每个 slab class 各维护一组这样的队列。</desc>
+                <defs><marker id="lruArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#475569"/></marker></defs>
+                <text x="16" y="26" font-size="15" font-weight="700" fill="#0f172a">四条 LRU 队列（每个 slab class 各一套）</text>
+                <g><text x="16" y="80" font-size="13" font-weight="700" fill="#991b1b">HOT</text><rect x="120" y="56" width="580" height="40" rx="8" fill="#fff" stroke="#f87171"/><g fill="#fecaca" stroke="#f87171"><rect x="132" y="60" width="70" height="32"/><rect x="210" y="60" width="70" height="32"/><rect x="288" y="60" width="70" height="32"/><rect x="366" y="60" width="70" height="32"/></g><text x="470" y="82" font-size="13" fill="#94a3b8">…</text></g>
+                <g><text x="16" y="138" font-size="13" font-weight="700" fill="#9a3412">WARM</text><rect x="120" y="114" width="580" height="40" rx="8" fill="#fff" stroke="#fb923c"/><g fill="#fed7aa" stroke="#fb923c"><rect x="132" y="118" width="70" height="32"/><rect x="210" y="118" width="70" height="32"/><rect x="288" y="118" width="70" height="32"/><rect x="366" y="118" width="70" height="32"/></g><text x="470" y="140" font-size="13" fill="#94a3b8">…</text></g>
+                <g><text x="16" y="196" font-size="13" font-weight="700" fill="#1e40af">COLD</text><rect x="120" y="172" width="580" height="40" rx="8" fill="#fff" stroke="#60a5fa"/><g fill="#bfdbfe" stroke="#60a5fa"><rect x="132" y="176" width="70" height="32"/><rect x="210" y="176" width="70" height="32"/><rect x="288" y="176" width="70" height="32"/><rect x="366" y="176" width="70" height="32"/></g><text x="470" y="198" font-size="13" fill="#94a3b8">…</text></g>
+                <g><text x="16" y="254" font-size="13" font-weight="700" fill="#475569">TEMP</text><rect x="120" y="230" width="580" height="40" rx="8" fill="#fff" stroke="#94a3b8"/><g fill="#e2e8f0" stroke="#94a3b8"><rect x="132" y="234" width="70" height="32"/><rect x="210" y="234" width="70" height="32"/><rect x="288" y="234" width="70" height="32"/><rect x="366" y="234" width="70" height="32"/></g><text x="470" y="256" font-size="13" fill="#94a3b8">…</text></g>
+                <text x="120" y="300" font-size="11" fill="#64748b">head（插入端）</text>
+                <text x="700" y="300" font-size="11" fill="#64748b" text-anchor="end">tail（淘汰端）</text>
+                <line x1="215" y1="284" x2="605" y2="284" stroke="#475569" stroke-width="2" marker-end="url(#lruArrow)"/>
+                <text x="410" y="314" font-size="11" fill="#475569" text-anchor="middle">淘汰方向（尾部先出）</text>
+            </svg>
+            <figcaption><strong>图 12-1　四条 LRU 队列（结构示意）。</strong>新 item 从 head（头部）插入，淘汰时从 tail（尾部）取出。HOT 是新 item 的“等待区”，被重复访问才升入 WARM；COLD 是淘汰候选，被重新访问可“复活”回 WARM；TEMP 存放 TTL ≤ 61 秒的短命 item，不参与升降级。每个 slab class 各维护这样一组队列。</figcaption>
+        </figure>
 
         <h2>do_item_link_q()：新 item 进入 HOT</h2>
 
@@ -201,8 +240,7 @@
                 <tr>
                     <td>HOT</td>
                     <td>→ WARM</td>
-                    <td>"
-第一次被重新访问，证明你有点热"</td>
+                    <td>第一次被重新访问，证明你有点热</td>
                 </tr>
                 <tr>
                     <td>WARM</td>
@@ -216,6 +254,62 @@
                 </tr>
             </tbody>
         </table>
+
+        <figure class="diagram" id="fig-bump">
+            <div class="figure-controls" id="bumpBtns">
+                <button type="button" data-q="HOT">item 在 HOT</button>
+                <button type="button" data-q="WARM">item 在 WARM</button>
+                <button type="button" data-q="COLD">item 在 COLD</button>
+                <button type="button" data-q="TEMP">item 在 TEMP</button>
+            </div>
+            <p class="diagram-note" id="bumpNote">选择一个当前队列，看它被访问后会去哪里。</p>
+            <svg id="bumpSvg" viewBox="0 0 760 240" role="img" aria-labelledby="bumpTitle bumpDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="bumpTitle">lru_bump 升级状态机：HOT/WARM/COLD/TEMP</title>
+                <desc id="bumpDesc">HOT 和 COLD 中的 item 被访问后都升入 WARM，WARM 中的 item 根据时间间隔可能移回头部，TEMP 中的 item 不做升降级。</desc>
+                <defs><marker id="bmk" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#2563eb"/></marker></defs>
+                <text x="16" y="22" font-size="14" font-weight="700" fill="#0f172a">lru_bump：被访问时的队列迁移</text>
+                <g class="qnode" id="qTEMP"><rect x="310" y="36" width="140" height="50" rx="10" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/><text x="380" y="66" font-size="13" font-weight="700" fill="#475569" text-anchor="middle">TEMP</text></g>
+                <text x="470" y="66" font-size="11" fill="#64748b">被访问也不动</text>
+                <g class="qedge" id="e_hw"><line x1="192" y1="168" x2="303" y2="168" stroke="#2563eb" stroke-width="2" marker-end="url(#bmk)"/></g>
+                <g class="qedge" id="e_cw"><line x1="568" y1="168" x2="457" y2="168" stroke="#2563eb" stroke-width="2" marker-end="url(#bmk)"/></g>
+                <g class="qedge" id="e_ww"><path d="M360,138 C344,106 416,106 400,138" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#bmk)"/></g>
+                <g class="qnode" id="qHOT"><rect x="50" y="140" width="140" height="56" rx="10" fill="#fecaca" stroke="#f87171" stroke-width="2"/><text x="120" y="174" font-size="13" font-weight="700" fill="#991b1b" text-anchor="middle">HOT</text></g>
+                <g class="qnode" id="qWARM"><rect x="310" y="140" width="140" height="56" rx="10" fill="#fed7aa" stroke="#fb923c" stroke-width="2"/><text x="380" y="174" font-size="13" font-weight="700" fill="#9a3412" text-anchor="middle">WARM</text></g>
+                <g class="qnode" id="qCOLD"><rect x="570" y="140" width="140" height="56" rx="10" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2"/><text x="640" y="174" font-size="13" font-weight="700" fill="#1e40af" text-anchor="middle">COLD</text></g>
+                <text x="240" y="162" font-size="10" fill="#1e40af" text-anchor="middle">首次重访</text>
+                <text x="512" y="162" font-size="10" fill="#1e40af" text-anchor="middle">复活</text>
+                <text x="380" y="212" font-size="11" fill="#64748b" text-anchor="middle">WARM 自环：仅当距上次更新超过 ITEM_UPDATE_INTERVAL 才移回头部</text>
+            </svg>
+            <figcaption><strong>图 12-2　lru_bump 状态机（规则示意）。</strong>HOT 中的 item 首次被重访即升入 WARM；COLD 中的 item 被重访则“复活”回 WARM；WARM 中的 item 只在距上次更新超过 <code>ITEM_UPDATE_INTERVAL</code>（默认 60 秒）时才移回头部，以避免频繁的链表操作；TEMP 中的短 TTL item 不做任何升降级。点击上方按钮可高亮对应路径。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('bumpSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('bumpNote');
+                var nodes = { HOT: 'qHOT', WARM: 'qWARM', COLD: 'qCOLD', TEMP: 'qTEMP' };
+                var edges = { HOT: ['e_hw'], WARM: ['e_ww'], COLD: ['e_cw'], TEMP: [] };
+                var msgs = {
+                    HOT: 'HOT 中的 item 再次被访问 → 升入 WARM。',
+                    WARM: 'WARM 中再次被访问：距上次更新超过 ITEM_UPDATE_INTERVAL（默认 60s）才移回 WARM 头部。',
+                    COLD: 'COLD 中被重新访问 → “复活”回到 WARM。',
+                    TEMP: 'TEMP（TTL ≤ 61s）：被访问也不做升降级。'
+                };
+                var all = ['qHOT', 'qWARM', 'qCOLD', 'qTEMP'];
+                function pick(q) {
+                    all.forEach(function (i) { document.getElementById(i).classList.remove('on'); });
+                    [].forEach.call(svg.querySelectorAll('.qedge'), function (e) { e.classList.remove('on'); });
+                    document.getElementById(nodes[q]).classList.add('on');
+                    (edges[q] || []).forEach(function (e) { document.getElementById(e).classList.add('on'); });
+                    note.textContent = msgs[q];
+                }
+                document.getElementById('bumpBtns').addEventListener('click', function (e) {
+                    var b = e.target.closest('button');
+                    if (b && b.hasAttribute('data-q')) { pick(b.getAttribute('data-q')); }
+                });
+            })();
+        </script>
 
         <p>几个值得注意的设计细节：</p>
 
@@ -324,7 +418,7 @@ static unsigned int sizes[LARGEST_ID + 1];
             <a href="index.html">📖 返回目录</a>
             <a href="13.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
