@@ -126,7 +126,7 @@
                 <text x="690" y="56" font-size="10" fill="#b45309" text-anchor="end">触发扩容</text>
                 <text x="395" y="228" font-size="11" fill="#64748b" text-anchor="middle">item 数（持续增长）→</text>
             </svg>
-            <figcaption><strong>图 14-2　负载因子的锯齿形曲线（示意）。</strong>每次扩容把桶数翻倍，负载因子随即回落到约 0.75，随后随 item 增长再次攀升到 1.5 并触发下一次扩容。由于扩容期间不能再次触发，曲线在高负载下可能短暂越过 1.5 再回落。</figcaption>
+            <figcaption><strong>图 14-1　负载因子的锯齿形曲线（示意）。</strong>每次扩容把桶数翻倍，负载因子随即回落到约 0.75，随后随 item 增长再次攀升到 1.5 并触发下一次扩容。由于扩容期间不能再次触发，曲线在高负载下可能短暂越过 1.5 再回落。</figcaption>
         </figure>
 
         <p>注意一个有趣的特性：每次扩容后，负载因子会回落到大约 0.75（扩容阈值 1.5 的一半）。这意味着扩容后哈希表的性能会"焕然一新"——平均每个桶只有 0.75 个 item，链表长度几乎等于 1。随着 item 继续增加，负载因子逐渐回升到 1.5，再次触发扩容。这是一个"锯齿形"的增长曲线。</p>
@@ -305,7 +305,7 @@ if (expanding &amp;&amp; bucket &lt; expand_bucket) {
                 <text id="dualLineLabel" x="352" y="42" font-size="11" fill="#dc2626" text-anchor="middle">expand_bucket</text>
                 <text x="120" y="196" font-size="11" fill="#334155">查表规则：新表索引 &lt; expand_bucket → 查新表；否则查旧表（插入/删除同样判断）。</text>
             </svg>
-            <figcaption><strong>图 14-1　双表共存与 expand_bucket 分界（机制示意）。</strong>扩容时新表立即分配好，但旧表数据不是一次性搬完，而是由后台线程按 <code>expand_bucket</code> 逐桶迁移：小于该值的桶已在新表、旧表对应位置被清空；大于等于该值的桶仍在旧表。查找、插入、删除都先做这个判断，再决定查哪张表，因此扩容期间服务不中断。</figcaption>
+            <figcaption><strong>图 14-2　双表共存与 expand_bucket 分界（机制示意）。</strong>扩容时新表立即分配好，但旧表数据不是一次性搬完，而是由后台线程按 <code>expand_bucket</code> 逐桶迁移：小于该值的桶已在新表、旧表对应位置被清空；大于等于该值的桶仍在旧表。查找、插入、删除都先做这个判断，再决定查哪张表，因此扩容期间服务不中断。</figcaption>
         </figure>
 
         <script>
