@@ -5,11 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第10章 Item：数据存储的基本单元</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        #flagSvg rect.flag { cursor: pointer; opacity: .45; transition: opacity .2s, fill .2s; }
+        #flagSvg rect.flag.on { opacity: 1; }
+        .calc-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: .3rem 0; }
+        .calc-row label { font-size: .88rem; color: #334155; }
+        .calc-row input { width: 5.5rem; font: inherit; padding: .25rem .5rem; border: 1px solid #c7d8f5; border-radius: 8px; }
+        .calc-out { font-weight: 700; color: #1e3a8a; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +64,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第10章 Item：数据存储的基本单元</h1>
 
         <p>大家好，我是你们的讲师。过去两章我们从 slab allocator 的视角看了内存管理——那是从"分配器"的视角看待内存。现在让我们切换到"用户"视角：当你执行 <code>set mykey 0 3600 5</code> 并发送 "hello" 时，这段数据在 Memcached 内部到底长什么样？</p>
@@ -191,7 +214,7 @@
                            (item)->nsuffix + 1 + \
                            (item)->nbytes)</code></pre>
 
-        <p>等一下——<code>ITEM_key()</code 的定义看起来有点奇怪。为什么不直接用指针偏移量？因为 C 标准不允许在结构体成员之间做指针运算的假设（可能有 padding），所以 Memcached 用一种"安全但繁琐"的方式来计算 key 的偏移量——实际上是通过 <code>&amp;((item)->next)</code> 加上所有之前字段的总大小，去除 <code>next/prev/h_next</code> 这些指针字段的偏移。</p>
+        <p>等一下——<code>ITEM_key()</code> 的定义看起来有点奇怪。为什么不直接用指针偏移量？因为 C 标准不允许在结构体成员之间做指针运算的假设（可能有 padding），所以 Memcached 用一种"安全但繁琐"的方式来计算 key 的偏移量——实际上是通过 <code>&amp;((item)->next)</code> 加上所有之前字段的总大小，去除 <code>next/prev/h_next</code> 这些指针字段的偏移。</p>
 
         <p>不过在实际的现代版本中，<code>ITEM_key</code> 的实现已经优化为：</p>
 
@@ -233,6 +256,28 @@
 chunk 总大小 = slabclass[slabs_clsid].size
               (由 slab allocator 按 class 固定)</code></pre>
 
+        <figure class="diagram" id="fig-layout">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="layTitle layDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="layTitle">item 头部、key、suffix、value 在同一个 chunk 中连续存放</title>
+                <desc id="layDesc">bar 图展示一个 chunk 从前到后依次存放 item 头部、key、suffix、value，尾部是未被利用的内部碎片；前四段合计即 ITEM_ntotal。</desc>
+                <text x="16" y="22" font-size="14" font-weight="700" fill="#0f172a">item 在一个 chunk 内的连续布局（以 set user:123 0 3600 5 / hello 为例）</text>
+                <line x1="40" y1="92" x2="564" y2="92" stroke="#2563eb" stroke-width="2"/>
+                <line x1="40" y1="92" x2="40" y2="106" stroke="#2563eb" stroke-width="2"/>
+                <line x1="564" y1="92" x2="564" y2="106" stroke="#2563eb" stroke-width="2"/>
+                <text x="302" y="84" font-size="12" fill="#1e40af" text-anchor="middle">ITEM_ntotal = 77 B</text>
+                <g stroke="#94a3b8"><rect x="40" y="110" width="381" height="70" fill="#dbeafe"/><rect x="421" y="110" width="61" height="70" fill="#bbf7d0"/><rect x="482" y="110" width="48" height="70" fill="#fef9c3"/><rect x="530" y="110" width="34" height="70" fill="#fbcfe8"/><rect x="564" y="110" width="129" height="70" fill="#e2e8f0"/></g>
+                <line x1="40" y1="180" x2="693" y2="180" stroke="#475569" stroke-width="2"/>
+                <line x1="40" y1="180" x2="40" y2="192" stroke="#475569" stroke-width="2"/>
+                <line x1="693" y1="180" x2="693" y2="192" stroke="#475569" stroke-width="2"/>
+                <text x="366" y="210" font-size="12" fill="#0f172a" text-anchor="middle">chunk 总大小 = slabclass[slabs_clsid].size（例：96 B）</text>
+                <g font-size="11" fill="#1e293b" text-anchor="middle">
+                    <text x="230" y="150">item 头部 56 B</text><text x="451" y="150">key</text><text x="506" y="150">suffix</text><text x="547" y="150">value</text><text x="628" y="150">内部碎片</text>
+                </g>
+                <g font-size="10" fill="#64748b" text-anchor="middle"><text x="451" y="166">9B</text><text x="506" y="166">7B</text><text x="547" y="166">5B</text><text x="628" y="166">19B</text></g>
+            </svg>
+            <figcaption><strong>图 10-1　item 的连续内存布局（尺寸取自本章计算题）。</strong>item 头部与 <code>key</code>、<code>suffix</code>、<code>value</code> 紧挨着放在同一块 chunk 中，没有任何外部指针——这对缓存局部性至关重要。头部+key+suffix+value 合计即 <code>ITEM_ntotal()</code>（此处 77 B）；剩下到 chunk 边界的 19 B 是内部碎片。<code>ITEM_ntotal()</code> 一旦超过目标 class 的 chunk size，就必须换到更大的 class。</figcaption>
+        </figure>
+
         <p>这张图清楚地说明了：为什么 <code>ITEM_ntotal()</code> 可能会超过 <code>slabclass[id].size</code>——当 item 头部 + key + suffix + value 的总大小超过 chunk size 时，item 就无法放入这个 slab class。这正是 Memcached 选择"最合适的 slab class"的依据——分配时从 class 1 开始向上查找，找到第一个 chunk size >= ITEM_ntotal() 的 class。</p>
 
         <div class="tip">
@@ -262,6 +307,64 @@ chunk 总大小 = slabclass[slabs_clsid].size
             </tbody>
         </table>
 
+        <figure class="diagram" id="fig-flags">
+            <div class="figure-controls" id="flagBtns">
+                <button type="button" data-bit="0">ITEM_LINKED</button>
+                <button type="button" data-bit="1">ITEM_SLABBED</button>
+                <button type="button" data-bit="2">ITEM_HDR</button>
+                <button type="button" data-bit="3">ITEM_ACTIVE</button>
+                <button type="button" data-bit="4">ITEM_FETCHED</button>
+                <button type="button" data-bit="5">ITEM_INVALID</button>
+                <button type="button" data-bit="6">ITEM_SKIP</button>
+                <button type="button" id="flagClear">清除</button>
+            </div>
+            <p class="diagram-note" id="flagNote">点击一个标志，查看它在 item 生命周期中的含义。</p>
+            <svg id="flagSvg" viewBox="0 0 760 180" role="img" aria-labelledby="flagTitle flagDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="flagTitle">it_flags 8 位位掩码的各标志位</title>
+                <desc id="flagDesc">it_flags 是一个 8 位字段，bit0 到 bit6 分别对应 ITEM_LINKED(1)、ITEM_SLABBED(2)、ITEM_HDR(4)、ITEM_ACTIVE(8)、ITEM_FETCHED(16)、ITEM_INVALID(32)、ITEM_SKIP(64)。</desc>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">it_flags：一个字节里的七个状态位</text>
+                <g class="flag"><rect x="40" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="0"/><text x="80" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">LINKED</text><text x="80" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">1</text></g>
+                <g class="flag"><rect x="130" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="1"/><text x="170" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">SLABBED</text><text x="170" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">2</text></g>
+                <g class="flag"><rect x="220" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="2"/><text x="260" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">HDR</text><text x="260" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">4</text></g>
+                <g class="flag"><rect x="310" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="3"/><text x="350" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">ACTIVE</text><text x="350" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">8</text></g>
+                <g class="flag"><rect x="400" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="4"/><text x="440" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">FETCHED</text><text x="440" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">16</text></g>
+                <g class="flag"><rect x="490" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="5"/><text x="530" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">INVALID</text><text x="530" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">32</text></g>
+                <g class="flag"><rect x="580" y="60" width="80" height="72" rx="8" fill="#bfdbfe" stroke="#60a5fa" stroke-width="2" data-bit="6"/><text x="620" y="92" font-size="11" fill="#1e3a8a" text-anchor="middle">SKIP</text><text x="620" y="116" font-size="15" font-weight="700" fill="#1e3a8a" text-anchor="middle">64</text></g>
+                <text x="40" y="158" font-size="11" fill="#64748b">位值 128 在标志表未列出（保留），故图中不展示。</text>
+            </svg>
+            <figcaption><strong>图 10-2　it_flags 的状态位（数值见本章标志表）。</strong>每个标志占一个位，可用位掩码读写；因此“已链接”“已回收”等状态可以同时存在而不互相覆盖。点击上方按钮可查看每个标志的含义。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('flagSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('flagNote');
+                var desc = {
+                    0: 'ITEM_LINKED(1)：已加入哈希表与 LRU 链表，对客户端可见。',
+                    1: 'ITEM_SLABBED(2)：所在 chunk 在空闲链表中，未被使用。',
+                    2: 'ITEM_HDR(4)：用于 external storage 的 header 标记。',
+                    3: 'ITEM_ACTIVE(8)：在最近访问窗口中被访问过，可被 LRU 提升。',
+                    4: 'ITEM_FETCHED(16)：曾被客户端读取过，用于统计“有用”的缓存。',
+                    5: 'ITEM_INVALID(32)：已失效但尚未从 LRU 中移除。',
+                    6: 'ITEM_SKIP(64)：LRU crawler 跳过此 item。'
+                };
+                var cells = [].slice.call(svg.querySelectorAll('rect.flag'));
+                function clear() { cells.forEach(function (c) { c.classList.remove('on'); }); note.textContent = '点击一个标志，查看它在 item 生命周期中的含义。'; }
+                function pick(bit) {
+                    clear();
+                    cells.forEach(function (c) { if (+c.getAttribute('data-bit') === bit) { c.classList.add('on'); } });
+                    note.textContent = desc[bit];
+                }
+                document.getElementById('flagBtns').addEventListener('click', function (e) {
+                    var b = e.target.closest('button');
+                    if (b && b.hasAttribute('data-bit')) { pick(+b.getAttribute('data-bit')); }
+                });
+                document.getElementById('flagClear').addEventListener('click', clear);
+                clear();
+            })();
+        </script>
+
         <p>当一个 item 刚通过 <code>do_slabs_alloc()</code> 分配时，它的 <code>it_flags</code> 初始为 0。随后在 <code>do_item_link()</code> 中被设置为 <code>ITEM_LINKED</code>（可能还包含 <code>ITEM_ACTIVE</code> 和 <code>ITEM_FETCHED</code>）。当 item 过期被删除时，如果它的 chunk 被放回空闲链表，标志位变为 <code>ITEM_SLABBED</code>。</p>
 
         <p>这些标志位在整个 item 生命周期中起到了"状态机"的作用——每当一个函数需要判断 item 当前处于什么状态时，就会检查 <code>it_flags</code>。</p>
@@ -290,6 +393,39 @@ hello</code></pre>
 
         <p><strong>总大小：</strong>56 + 9 + 7 + 5 = <strong>77 字节</strong></p>
 
+        <div class="highlight">
+            <strong>动手算一算：</strong>改变 key 长度或 value 字节数，实时算出 <code>ITEM_ntotal()</code> 与命中的 slab class。
+            <div class="calc-row">
+                <label>key 长度 <input id="calcKey" type="number" value="8" min="1" max="250"></label>
+                <label>value 字节数 <input id="calcVal" type="number" value="5" min="0"></label>
+            </div>
+            <p class="calc-out" id="calcOut" role="status"></p>
+            <p class="diagram-note">按本章公式 <code>ITEM_ntotal = 56 + (nkey+1) + (nsuffix+1) + nbytes</code> 计算，suffix 按 <code>" 0 &lt;nbytes&gt;\r\n"</code> 计长；class 尺寸取自第 8 章示例表（教学示意，不含 CAS 占用 suffix 尾部的细节）。</p>
+        </div>
+        <script>
+            (function () {
+                var sizes = [96, 120, 152, 192, 240, 304, 384, 480];
+                var out = document.getElementById('calcOut');
+                var key = document.getElementById('calcKey');
+                var val = document.getElementById('calcVal');
+                if (!out || !key || !val) { return; }
+                function calc() {
+                    var k = Math.max(1, Math.min(250, Math.floor(+key.value) || 1));
+                    var v = Math.max(0, Math.floor(+val.value) || 0);
+                    var nsuffix = 5 + String(v).length;
+                    var total = 56 + (k + 1) + (nsuffix + 1) + v;
+                    var cls = 0;
+                    for (var i = 0; i < sizes.length; i++) { if (sizes[i] >= total) { cls = i + 1; break; } }
+                    var msg = 'ITEM_ntotal = 56 + ' + (k + 1) + ' + ' + (nsuffix + 1) + ' + ' + v + ' = ' + total + ' B；';
+                    msg += cls ? ('放入 class ' + cls + '（chunk ' + sizes[cls - 1] + ' B），内部碎片 ' + (sizes[cls - 1] - total) + ' B。') : '超过示例表最大 class（480 B），需更大的 class。';
+                    out.textContent = msg;
+                }
+                key.addEventListener('input', calc);
+                val.addEventListener('input', calc);
+                calc();
+            })();
+        </script>
+
         <p>查上一章的 slab class 表，class 1 的 chunk size 是 96 字节，77 &lt; 96，所以这个 item 会放入 <strong>slab class 1</strong>，每个 chunk 浪费 96 - 77 = 19 字节（内部碎片）。</p>
 
         <div class="highlight">
@@ -303,7 +439,7 @@ hello</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="11.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
