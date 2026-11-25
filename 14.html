@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第14章 哈希表扩容：渐进式rehash</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第14章 哈希表扩容：渐进式 Rehash</h1>
 
         <p>大家好，我是你们的讲师。上一章我们探讨了哈希表的基本操作——查找、插入、删除。但哈希表面临一个根本性的问题：随着数据量增长，负载因子（item 数 / 桶数）不断升高，碰撞越来越频繁，查找效率从 O(1) 逐渐退化到 O(n)。</p>
@@ -92,6 +109,25 @@
                 <tr><td>25</td><td>33,554,432</td><td>50,331,648</td><td>67,108,864</td><td>0.75</td></tr>
             </tbody>
         </table>
+
+        <figure class="diagram" id="fig-saw">
+            <svg viewBox="0 0 760 240" role="img" aria-labelledby="sawTitle sawDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="sawTitle">负载因子随 item 增长的锯齿形曲线</title>
+                <desc id="sawDesc">负载因子从扩容后的 0.75 逐渐回升到 1.5，触发扩容后回落到 0.75，形成反复的锯齿形状。</desc>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">负载因子 = hash_items / 桶数</text>
+                <line x1="60" y1="210" x2="730" y2="210" stroke="#94a3b8" stroke-width="2"/>
+                <g stroke="#e2e8f0" stroke-dasharray="4 4"><line x1="60" y1="60" x2="730" y2="60"/><line x1="60" y1="135" x2="730" y2="135"/></g>
+                <text x="56" y="64" font-size="11" fill="#b45309" text-anchor="end">1.5</text>
+                <text x="56" y="139" font-size="11" fill="#166534" text-anchor="end">0.75</text>
+                <text x="34" y="136" font-size="11" fill="#334155">负载因子</text>
+                <polyline points="60,135 270,60 270,135 480,60 480,135 690,60 690,135" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+                <text x="272" y="56" font-size="10" fill="#b45309">触发扩容</text>
+                <text x="482" y="56" font-size="10" fill="#b45309">触发扩容</text>
+                <text x="690" y="56" font-size="10" fill="#b45309" text-anchor="end">触发扩容</text>
+                <text x="395" y="228" font-size="11" fill="#64748b" text-anchor="middle">item 数（持续增长）→</text>
+            </svg>
+            <figcaption><strong>图 14-2　负载因子的锯齿形曲线（示意）。</strong>每次扩容把桶数翻倍，负载因子随即回落到约 0.75，随后随 item 增长再次攀升到 1.5 并触发下一次扩容。由于扩容期间不能再次触发，曲线在高负载下可能短暂越过 1.5 再回落。</figcaption>
+        </figure>
 
         <p>注意一个有趣的特性：每次扩容后，负载因子会回落到大约 0.75（扩容阈值 1.5 的一半）。这意味着扩容后哈希表的性能会"焕然一新"——平均每个桶只有 0.75 个 item，链表长度几乎等于 1。随着 item 继续增加，负载因子逐渐回升到 1.5，再次触发扩容。这是一个"锯齿形"的增长曲线。</p>
 
@@ -245,16 +281,56 @@ if (expanding &amp;&amp; bucket &lt; expand_bucket) {
 
         <p>这个逻辑用一张图来总结：</p>
 
-        <pre><code>                     expand_bucket
-                           │
-               ┌───────────┴───────────┐
-               │       已迁移           │       未迁移
-               │   (查新表)            │    (查旧表)
-               ▼                       ▼
-    新表:  [bucket 0..N]          [空]
-    旧表:  [空]                   [bucket N+1..M-1]
+        <figure class="diagram" id="fig-dual">
+            <div class="figure-controls">
+                <button type="button" id="dualNext">迁移一批桶</button>
+                <button type="button" id="dualReset">重置</button>
+            </div>
+            <p class="diagram-note" id="dualNote">expand_bucket = 40%：左侧桶已迁入新表，右侧桶仍留在旧表。</p>
+            <svg id="dualSvg" viewBox="0 0 760 220" role="img" aria-labelledby="dualTitle dualDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="dualTitle">扩容期间双表以 expand_bucket 为界分开存放数据</title>
+                <desc id="dualDesc">新表左侧的桶已迁入数据、右侧为空；旧表左侧已被清空、右侧仍保留数据；查找时新表索引小于 expand_bucket 则查新表，否则查旧表。</desc>
+                <text x="16" y="30" font-size="14" font-weight="700" fill="#0f172a">双表共存：以 expand_bucket 为分界</text>
+                <text x="120" y="50" font-size="11" fill="#166534">新表 primary_hashtable（已扩容到 2×）</text>
+                <rect id="nL" x="120" y="56" width="232" height="38" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/>
+                <rect id="nR" x="352" y="56" width="348" height="38" fill="#f1f5f9" stroke="#cbd5e1"/>
+                <text id="nLt" x="236" y="80" font-size="12" fill="#14532d" text-anchor="middle">已迁入</text>
+                <text id="nRt" x="526" y="80" font-size="12" fill="#64748b" text-anchor="middle">空</text>
+                <text x="120" y="110" font-size="11" fill="#854d0e">旧表 old_hashtable（逐步清空）</text>
+                <rect id="oL" x="120" y="116" width="232" height="38" fill="#f1f5f9" stroke="#cbd5e1"/>
+                <rect id="oR" x="352" y="116" width="348" height="38" fill="#fef9c3" stroke="#facc15" stroke-width="2"/>
+                <text id="oLt" x="236" y="140" font-size="12" fill="#64748b" text-anchor="middle">空（已清）</text>
+                <text id="oRt" x="526" y="140" font-size="12" fill="#854d0e" text-anchor="middle">待迁出（仍在此）</text>
+                <line id="dualLine" x1="352" y1="44" x2="352" y2="168" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4"/>
+                <text id="dualLineLabel" x="352" y="42" font-size="11" fill="#dc2626" text-anchor="middle">expand_bucket</text>
+                <text x="120" y="196" font-size="11" fill="#334155">查表规则：新表索引 &lt; expand_bucket → 查新表；否则查旧表（插入/删除同样判断）。</text>
+            </svg>
+            <figcaption><strong>图 14-1　双表共存与 expand_bucket 分界（机制示意）。</strong>扩容时新表立即分配好，但旧表数据不是一次性搬完，而是由后台线程按 <code>expand_bucket</code> 逐桶迁移：小于该值的桶已在新表、旧表对应位置被清空；大于等于该值的桶仍在旧表。查找、插入、删除都先做这个判断，再决定查哪张表，因此扩容期间服务不中断。</figcaption>
+        </figure>
 
-    判断公式: 新表索引 &lt; expand_bucket ? 新表 : 旧表</code></pre>
+        <script>
+            (function () {
+                var svg = document.getElementById('dualSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('dualNote');
+                var X = 120, W = 580;
+                var frac = 0.4;
+                function render() {
+                    var left = Math.round(W * frac);
+                    var ids = ['nL', 'oL'];
+                    ids.forEach(function (id) { document.getElementById(id).setAttribute('width', left); });
+                    ['nR', 'oR'].forEach(function (id) { document.getElementById(id).setAttribute('x', X + left);
+                        document.getElementById(id).setAttribute('width', W - left); });
+                    document.getElementById('dualLine').setAttribute('x1', X + left);
+                    document.getElementById('dualLine').setAttribute('x2', X + left);
+                    document.getElementById('dualLineLabel').setAttribute('x', X + left);
+                    note.textContent = 'expand_bucket = ' + Math.round(frac * 100) + '%：左侧桶已迁入新表，右侧桶仍留在旧表。';
+                }
+                document.getElementById('dualNext').addEventListener('click', function () { if (frac < 1) { frac = Math.min(1, frac + 0.2); render(); } });
+                document.getElementById('dualReset').addEventListener('click', function () { frac = 0.4; render(); });
+                render();
+            })();
+        </script>
 
         <p>插入和删除操作的判断逻辑与查找类似——都是通过比较 <code>expand_bucket</code> 和计算出的新表桶索引来决定操作哪张表。</p>
 
@@ -324,7 +400,7 @@ if (expanding &amp;&amp; bucket &lt; expand_bucket) {
             <a href="index.html">📖 返回目录</a>
             <a href="15.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
