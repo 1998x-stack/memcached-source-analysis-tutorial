@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第22章 External Storage：混合存储</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第22章 External Storage：混合存储</h1>
 
         <p>大家好，我是你们的讲师。这一章我们来聊一个非常有"工程味道"的特性——External Storage（extstore）。如果说前面几章讲的内存管理是在"螺蛳壳里做道场"，那 extstore 就是在告诉你：当螺蛳壳不够用的时候，怎么优雅地把数据挪到隔壁的仓库里。</p>
@@ -63,6 +80,40 @@
         <div class="highlight">
             <strong>关键洞察：</strong>extstore 并不是简单的"内存满了就写 SSD"。它维护了一个<strong>温冷数据分层</strong>——热数据在 RAM 中全量保留（key + value），冷数据在 SSD 中（仅 value），RAM 中只保留一个很小的"存根"（stub）来维护哈希索引。当一个冷 item 被访问时，它会被"预热"回 RAM。
         </div>
+
+        <figure class="diagram" id="fig-extlayers">
+            <svg viewBox="0 0 760 320" role="img" aria-labelledby="elTitle elDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="elTitle">extstore 的 RAM 与 SSD 分层存储架构</title>
+                <desc id="elDesc">RAM 中保留哈希索引、热数据以及冷数据的小存根；冷数据的 value 存在 SSD 的 page 上；冷数据被访问时预热回 RAM，冷下来的数据再迁移到 SSD。</desc>
+                <defs><marker id="elArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">extstore：RAM 做索引与热数据，SSD 做冷数据</text>
+                <rect x="30" y="42" width="700" height="130" rx="12" fill="#eef4ff" stroke="#c7d8f5" stroke-width="1.6"/>
+                <text x="46" y="64" font-size="12" font-weight="700" fill="#1e3a8a">RAM（内存）</text>
+                <rect x="46" y="76" width="200" height="80" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.8"/>
+                <text x="146" y="102" font-size="12" fill="#1e3a8a" text-anchor="middle">哈希表索引</text>
+                <text x="146" y="122" font-size="10" fill="#1e40af" text-anchor="middle">key → item 位置</text>
+                <text x="146" y="140" font-size="10" fill="#1e40af" text-anchor="middle">（含冷数据 stub）</text>
+                <rect x="270" y="76" width="200" height="80" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.8"/>
+                <text x="370" y="102" font-size="12" fill="#14532d" text-anchor="middle">Hot LRU</text>
+                <text x="370" y="122" font-size="10" fill="#166534" text-anchor="middle">key + value 全量保留</text>
+                <text x="370" y="140" font-size="10" fill="#166534" text-anchor="middle">（热数据）</text>
+                <rect x="494" y="76" width="220" height="80" rx="10" fill="#fef9c3" stroke="#eab308" stroke-width="1.8"/>
+                <text x="604" y="102" font-size="12" fill="#854d0e" text-anchor="middle">冷数据 stub</text>
+                <text x="604" y="122" font-size="10" fill="#a16207" text-anchor="middle">仅元数据（约 64B 头部）</text>
+                <text x="604" y="140" font-size="10" fill="#a16207" text-anchor="middle">指向 SSD 上的 offset</text>
+                <rect x="30" y="196" width="700" height="90" rx="12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.6"/>
+                <text x="46" y="218" font-size="12" font-weight="700" fill="#334155">SSD（extstore pages）</text>
+                <g fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.4">
+                    <rect x="46" y="230" width="120" height="44" rx="6"/><rect x="180" y="230" width="120" height="44" rx="6"/><rect x="314" y="230" width="120" height="44" rx="6"/><rect x="448" y="230" width="120" height="44" rx="6"/><rect x="582" y="230" width="120" height="44" rx="6"/>
+                </g>
+                <g font-size="10" fill="#475569" text-anchor="middle"><text x="106" y="256">page</text><text x="240" y="256">page</text><text x="374" y="256">page</text><text x="508" y="256">page</text><text x="642" y="256">page</text></g>
+                <line x1="604" y1="156" x2="604" y2="228" stroke="#64748b" stroke-width="1.8" marker-end="url(#elArrow)"/>
+                <text x="612" y="188" font-size="10" fill="#475569">迁移：value 写入 SSD</text>
+                <line x1="370" y1="228" x2="370" y2="158" stroke="#16a34a" stroke-width="1.8" marker-end="url(#elArrow)"/>
+                <text x="378" y="188" font-size="10" fill="#166534">预热：读回 Hot LRU</text>
+            </svg>
+            <figcaption><strong>图 22-1　extstore 的 RAM + SSD 分层（机制示意）。</strong>热数据的 key 与 value 都在 RAM；数据变冷后，value 被写入 SSD 的固定大小 page，内存中仅保留一个很小的 stub（元数据，含 SSD 偏移量）维持哈希索引；再次访问时把 value 预热回 RAM 的 Hot LRU。图中 page 大小、stub 头部尺寸为示意，实际默认 <code>ext_page_size=64KB</code>。</figcaption>
+        </figure>
 
         <h2>配置参数：启动 extstore</h2>
 
@@ -203,6 +254,65 @@ static int extstore_flush_page(struct extstore *e, int page_id) {
             <strong>compaction 的触发时机：</strong>当 page 中的有效数据比例低于 <code>freefr_thresh</code>（默认 50%）时，compaction 被触发。这是性能和空间利用率之间的权衡——有效数据比例越低，compaction 收益越大，但 IO 开销也越大。对于读多写少的 CDN 场景，可以把 freefr_thresh 设小一些（比如 30%），减少 compaction 频率。
         </div>
 
+        <figure class="diagram" id="fig-extpage">
+            <div class="figure-controls">
+                <button type="button" id="epNext">下一步</button>
+                <button type="button" id="epReset">重置</button>
+            </div>
+            <p class="diagram-note" id="epNote">第 1 步 / 4：分配一个空闲 page，准备写入。</p>
+            <svg id="epSvg" viewBox="0 0 760 230" role="img" aria-labelledby="epTitle epDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="epTitle">extstore 的 SSD page 生命周期</title>
+                <desc id="epDesc">SSD 空间按 page 管理：先分配空闲 page，再聚合写入 write buffer，写满后 flush 到 SSD，当页内有效数据过少时通过 compaction 回收。</desc>
+                <defs><marker id="epArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">SSD page 的生命周期：分配 → 写缓冲 → flush → compact</text>
+                <g stroke-width="1.6">
+                    <rect id="p0" x="30" y="80" width="150" height="76" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="p1" x="215" y="80" width="150" height="76" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="p2" x="400" y="80" width="150" height="76" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="p3" x="585" y="80" width="150" height="76" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="105" y="110">① 页分配</text><text x="290" y="110">② 写缓冲</text><text x="475" y="110">③ flush</text><text x="660" y="110">④ compact</text>
+                </g>
+                <g font-size="10" fill="#475569" text-anchor="middle">
+                    <text x="105" y="132">取空闲 page</text><text x="290" y="132">聚合小写入</text><text x="475" y="132">整页顺序写</text><text x="660" y="132">搬活数据回收</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#epArrow)">
+                    <line x1="180" y1="118" x2="211" y2="118"/><line x1="365" y1="118" x2="396" y2="118"/><line x1="550" y1="118" x2="581" y2="118"/>
+                </g>
+                <text x="380" y="192" font-size="11" fill="#334155" text-anchor="middle">顺序写对 SSD 友好；当 page 内有效数据低于阈值时触发 compaction。</text>
+            </svg>
+            <figcaption><strong>图 22-2　extstore 的 page 生命周期（机制示意）。</strong>写路径先分配空闲 page，再把小的写操作聚合进 <code>write buffer</code>，缓冲满后整页顺序 <code>flush</code> 到 SSD；当 page 内有效数据比例低于 <code>freefr_thresh</code> 时，通过 compaction 把存活数据搬到新 page 并释放旧页。图中“4 步”为概念划分，对应源码中的 <code>extstore_write()</code> / <code>extstore_flush()</code> / compaction 逻辑，未含实际阈值数值。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('epSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('epNote');
+                var steps = [
+                    '第 1 步 / 4：分配一个空闲 page，准备写入。',
+                    '第 2 步 / 4：把小的写操作聚合进 write buffer，减少小 IO。',
+                    '第 3 步 / 4：buffer 满后，将整页数据顺序 flush 到 SSD。',
+                    '第 4 步 / 4：页内有效数据过少时，compaction 搬活数据并回收页。'
+                ];
+                var idx = 0;
+                function render() {
+                    for (var i = 0; i < 4; i++) {
+                        var el = document.getElementById('p' + i);
+                        var on = (i === idx);
+                        el.setAttribute('fill', on ? '#dbeafe' : '#f1f5f9');
+                        el.setAttribute('stroke', on ? '#2563eb' : '#94a3b8');
+                        el.setAttribute('stroke-width', on ? '3' : '1.6');
+                    }
+                    note.textContent = steps[idx];
+                }
+                document.getElementById('epNext').addEventListener('click', function () { idx = (idx + 1) % steps.length; render(); });
+                document.getElementById('epReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
+
         <h2>性能影响实测：RAM-only vs RAM+SSD</h2>
 
         <p>extstore 不是银弹。它带来了容量优势，但代价是延迟的增加。我们来看一组对比实测数据：</p>
@@ -285,7 +395,7 @@ static int extstore_flush_page(struct extstore *e, int page_id) {
             <a href="index.html">📖 返回目录</a>
             <a href="23.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
