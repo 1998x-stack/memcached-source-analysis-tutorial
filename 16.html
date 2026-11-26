@@ -337,7 +337,7 @@ static void drive_machine(conn *c) {
                 <rect x="60" y="176" width="375" height="34" rx="8" fill="#f0fdf4" stroke="#86efac"/>
                 <text x="247" y="198" font-size="12" fill="#14532d" text-anchor="middle">rlbytes 归零 → 调用 complete_nread(c) → process_command()</text>
             </svg>
-            <figcaption><strong>图 16-2　部分读取下的进度管理（机制示意）。</strong>Memcached 不在一次读事件中假定能收到完整数据：<code>c->rlbytes</code> 记录还需多少字节，<code>c->rcurr</code> 记录写入位置。图中 value 恰好分两个 TCP 分片到达，是教学拆解；实际分片边界由网络决定，字节数与分片数仅为示意。</figcaption>
+            <figcaption><strong>图 16-1　部分读取下的进度管理（机制示意）。</strong>Memcached 不在一次读事件中假定能收到完整数据：<code>c->rlbytes</code> 记录还需多少字节，<code>c->rcurr</code> 记录写入位置。图中 value 恰好分两个 TCP 分片到达，是教学拆解；实际分片边界由网络决定，字节数与分片数仅为示意。</figcaption>
         </figure>
 
         <h2>conn_mwrite：批量写响应</h2>
@@ -452,7 +452,7 @@ static void drive_machine(conn *c) {
                     <text x="128" y="318" fill="#b91c1c">协议错误</text>
                 </g>
             </svg>
-            <figcaption><strong>图 16-1　连接状态机的状态与转移（机制示意）。</strong>加粗线为一条 set 请求的主路径：<code>conn_listening</code>（主线程 accept）→ <code>conn_new_cmd</code> → <code>conn_waiting</code> → <code>conn_read</code> → <code>conn_parse_cmd</code>；带 value 的写命令再走 <code>conn_nread</code> → <code>conn_mwrite</code>，写完回到 <code>conn_new_cmd</code>；若解析出错则进入 <code>conn_swallow</code> 丢弃多余数据。图中的状态名与转移关系对应源码中 <code>enum conn_states</code> 与 <code>drive_machine()</code> 的 case 分支，按钮仅用于逐步高亮路径。</figcaption>
+            <figcaption><strong>图 16-2　连接状态机的状态与转移（机制示意）。</strong>加粗线为一条 set 请求的主路径：<code>conn_listening</code>（主线程 accept）→ <code>conn_new_cmd</code> → <code>conn_waiting</code> → <code>conn_read</code> → <code>conn_parse_cmd</code>；带 value 的写命令再走 <code>conn_nread</code> → <code>conn_mwrite</code>，写完回到 <code>conn_new_cmd</code>；若解析出错则进入 <code>conn_swallow</code> 丢弃多余数据。图中的状态名与转移关系对应源码中 <code>enum conn_states</code> 与 <code>drive_machine()</code> 的 case 分支，按钮仅用于逐步高亮路径。</figcaption>
 
         <script>
             (function () {
