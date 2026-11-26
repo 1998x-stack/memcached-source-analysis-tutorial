@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第28章 综合项目：手写Mini-Memcached</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html" class="active">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第28章 综合项目：手写Mini-Memcached</h1>
 
         <p>大家好，我是你们的讲师。欢迎来到本课程的最后一章。如果你和我一起走过了前面 27 章，你已经在源码级别理解了 Memcached 的内存管理、网络编程、协议设计、并发模型——现在到了把这一切串起来的时候了。</p>
@@ -83,6 +100,71 @@ cc -o mini-memcached main.c slab.c hashtable.c lru.c proto_text.c network.c item
         <div class="tip">
             <strong>提示：</strong>如果你是第一次写网络服务程序，建议按 Step 1 -> 2 -> 3 -> 4 -> 5 的顺序进行。每个 Step 都可以独立测试。不要试图一次性写完再调——逐层推进，每完成一个模块就写一个小测试验证它。
         </div>
+
+        <figure class="diagram" id="fig-steps">
+            <div class="figure-controls">
+                <button type="button" id="stNext">下一步</button>
+                <button type="button" id="stReset">重置</button>
+            </div>
+            <p class="diagram-note" id="stNote">第 1 步 / 6：先实现简化版 slab allocator。</p>
+            <svg id="stSvg" viewBox="0 0 760 310" role="img" aria-labelledby="stTitle stDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="stTitle">Mini-Memcached 的六个构建步骤</title>
+                <desc id="stDesc">六个步骤依次为：slab allocator、哈希表、LRU 淘汰、ASCII 协议、libevent 网络层、压测对比。</desc>
+                <defs><marker id="stArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">自底向上六步：每一步都可单独测试</text>
+                <g stroke-width="1.6">
+                    <rect id="s0" x="30" y="64" width="210" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="s1" x="275" y="64" width="210" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="s2" x="520" y="64" width="210" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="s3" x="520" y="186" width="210" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="s4" x="275" y="186" width="210" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="s5" x="30" y="186" width="210" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="135" y="98">① Slab Allocator</text><text x="380" y="98">② 哈希表</text><text x="625" y="98">③ LRU 淘汰</text>
+                    <text x="625" y="220">④ ASCII 协议</text><text x="380" y="220">⑤ libevent 网络层</text><text x="135" y="220">⑥ 压测对比</text>
+                </g>
+                <g font-size="10" fill="#475569" text-anchor="middle">
+                    <text x="135" y="120">3 class + freelist</text><text x="380" y="120">Jenkins hash + 链地址</text><text x="625" y="120">单链表 LRU</text>
+                    <text x="625" y="242">get / set / delete</text><text x="380" y="242">单线程事件循环</text><text x="135" y="242">memtier 对比官方</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#stArrow)">
+                    <line x1="240" y1="104" x2="271" y2="104"/><line x1="485" y1="104" x2="516" y2="104"/>
+                    <line x1="625" y1="144" x2="625" y2="182"/><line x1="516" y1="226" x2="489" y2="226"/><line x1="271" y1="226" x2="244" y2="226"/>
+                </g>
+            </svg>
+            <figcaption><strong>图 28-1　Mini-Memcached 的六个构建步骤（与正文对照）。</strong>建议自底向上推进：先 slab allocator，再哈希表、LRU，然后 ASCII 协议与 libevent 单线程网络层，最后用 memtier-benchmark 与官方版本对比。每一步都可单独测试，避免一次性写完再调。图中模块名与正文的项目结构一致，具体代码量以实际实现为准。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('stSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('stNote');
+                var msgs = [
+                    '第 1 步 / 6：先实现简化版 slab allocator（3 个 class + freelist）。',
+                    '第 2 步 / 6：实现哈希表（Jenkins hash + 链地址法）。',
+                    '第 3 步 / 6：实现单链表 LRU 淘汰。',
+                    '第 4 步 / 6：实现 ASCII 协议解析（get/set/delete 状态机）。',
+                    '第 5 步 / 6：用 libevent 搭一个单线程网络层。',
+                    '第 6 步 / 6：用 memtier-benchmark 与官方版本对比。'
+                ];
+                var idx = 0;
+                function render() {
+                    for (var i = 0; i < 6; i++) {
+                        var el = document.getElementById('s' + i);
+                        var on = (i === idx);
+                        el.setAttribute('fill', on ? '#dbeafe' : '#f1f5f9');
+                        el.setAttribute('stroke', on ? '#2563eb' : '#94a3b8');
+                        el.setAttribute('stroke-width', on ? '3' : '1.6');
+                    }
+                    note.textContent = msgs[idx];
+                }
+                document.getElementById('stNext').addEventListener('click', function () { idx = (idx + 1) % 6; render(); });
+                document.getElementById('stReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
 
         <h2>Step 1: 简化版 Slab Allocator</h2>
 
@@ -291,6 +373,31 @@ $ memtier_benchmark -s 127.0.0.1 -p 11212 \
         </table>
 
         <p>不出所料，Mini-Memcached 的性能远不及官方版本。但这恰恰说明了两件事：<strong>第一</strong>，Memcached 的每一处优化——从 slab rebalance 到三级 LRU 到渐进式 rehash——都是实打实地为了性能；<strong>第二</strong>，我们用一个 500 行的程序就实现了官方版本的核心功能，证明了它的架构本质上是简洁而优雅的。</p>
+
+        <figure class="diagram" id="fig-bench">
+            <svg viewBox="0 0 760 280" role="img" aria-labelledby="fbTitle fbDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="fbTitle">Mini-Memcached 与官方版本的 QPS 对比</title>
+                <desc id="fbDesc">柱状图对比：SET QPS Mini 约 8 万而官方约 30 万，GET QPS Mini 约 12 万而官方约 50 万。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">Mini vs 官方：单线程 QPS 对比（本章压测表）</text>
+                <line x1="80" y1="200" x2="720" y2="200" stroke="#94a3b8" stroke-width="2"/>
+                <g>
+                    <rect x="150" y="178" width="60" height="22" fill="#f59e0b" stroke="#d97706" stroke-width="1.4"/>
+                    <rect x="220" y="116" width="60" height="84" fill="#3b82f6" stroke="#2563eb" stroke-width="1.4"/>
+                    <rect x="450" y="166" width="60" height="34" fill="#f59e0b" stroke="#d97706" stroke-width="1.4"/>
+                    <rect x="520" y="60" width="60" height="140" fill="#3b82f6" stroke="#2563eb" stroke-width="1.4"/>
+                </g>
+                <g font-size="11" text-anchor="middle">
+                    <text x="180" y="172" fill="#92400e">~8万</text><text x="250" y="110" fill="#1e3a8a">~30万</text>
+                    <text x="480" y="160" fill="#92400e">~12万</text><text x="550" y="54" fill="#1e3a8a">~50万</text>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="215" y="224">SET QPS</text><text x="515" y="224">GET QPS</text>
+                </g>
+                <g font-size="11" fill="#334155"><text x="150" y="244" fill="#92400e">■ Mini-Memcached</text><text x="320" y="244" fill="#1e3a8a">■ 官方 Memcached 1.6</text></g>
+                <text x="80" y="268" font-size="11" fill="#475569">代码量：Mini ~500 行 vs 官方 ~20,000 行——差距在 slab rebalance、三级 LRU、渐进式 rehash 等优化。</text>
+            </svg>
+            <figcaption><strong>图 28-2　Mini-Memcached 与官方版本的 QPS 对比。</strong>柱高直接取自本章的压测对比表：SET QPS 约 8 万 vs 30 万，GET QPS 约 12 万 vs 50 万。该表是本章在相同 64MB 内存、单线程场景下的实测记录，属于该实验环境的结果；其他指标（p99、碎片率、代码量）见正文表格。图中只为直观展示量级差异。</figcaption>
+        </figure>
 
         <h2>代码 Review 要点</h2>
 
