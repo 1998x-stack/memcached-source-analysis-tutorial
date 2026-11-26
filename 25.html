@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第25章 性能调优与生产踩坑</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第25章 性能调优与生产踩坑</h1>
 
         <p>大家好，我是你们的讲师。前24章我们一直在"读代码"，这一章我们要做一件更有意思的事——<strong>把代码推到生产环境里跑起来，然后看它怎么翻车，再把它救回来</strong>。</p>
@@ -182,6 +199,67 @@ def get_with_local_cache(key):
             <strong>经验数据：</strong>在我们的一次生产压测中，增加本地缓存后，Memcached 集群的 QPS 从 500 万降到了 80 万（热 key 请求被本地缓存吸收了），而业务方看到的延迟从 8ms 降到了 0.5ms。这是一个典型的"多花钱少办事"的反直觉案例——<strong>增加了一层缓存，总延迟反而大幅下降</strong>。
         </div>
 
+                <figure class="diagram" id="fig-hotkey">
+            <div class="figure-controls">
+                <button type="button" id="hkNext">下一步</button>
+                <button type="button" id="hkReset">重置</button>
+            </div>
+            <p class="diagram-note" id="hkNote">第 1 步 / 3：请求先查本地缓存。</p>
+            <svg viewBox="0 0 760 300" role="img" aria-labelledby="hkTitle hkDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="hkTitle">分层缓存吸收热 key 的路径</title>
+                <desc id="hkDesc">请求先查进程内本地缓存，命中则直接返回；未命中才查 Memcached 集群，仍未命中再回源数据库。热 key 的峰值请求尽量在本地缓存被吸收。</desc>
+                <defs><marker id="hkArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">分层缓存：把热 key 的峰值挡在最内层</text>
+                <text x="60" y="58" font-size="10" fill="#b45309">热 key 请求 →</text>
+                <rect id="hkL0" x="150" y="44" width="470" height="52" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+                <text x="385" y="68" font-size="12" fill="#14532d" text-anchor="middle">① 本地缓存（进程内 LRU）</text>
+                <text x="385" y="86" font-size="10" fill="#166534" text-anchor="middle">TTL 1–5 秒，吸收单 key 热点峰值</text>
+                <line x1="385" y1="96" x2="385" y2="126" stroke="#64748b" stroke-width="1.8" marker-end="url(#hkArrow)"/>
+                <text x="397" y="114" font-size="10" fill="#475569">未命中</text>
+                <rect id="hkL1" x="150" y="128" width="470" height="52" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+                <text x="385" y="152" font-size="12" fill="#1e3a8a" text-anchor="middle">② Memcached 集群（分片）</text>
+                <text x="385" y="170" font-size="10" fill="#1e40af" text-anchor="middle">热 key 可在应用层做 key 扩散（_0…_9）</text>
+                <line x1="385" y1="180" x2="385" y2="210" stroke="#64748b" stroke-width="1.8" marker-end="url(#hkArrow)"/>
+                <text x="397" y="198" font-size="10" fill="#475569">未命中</text>
+                <rect id="hkL2" x="150" y="212" width="470" height="52" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+                <text x="385" y="236" font-size="12" fill="#92400e" text-anchor="middle">③ 数据库（最后防线，需回源限流）</text>
+                <text x="385" y="254" font-size="10" fill="#a16207" text-anchor="middle">两层都 miss 时才回源</text>
+                <line x1="150" y1="70" x2="60" y2="70" stroke="#16a34a" stroke-width="1.8" marker-end="url(#hkArrow)"/>
+                <text x="60" y="94" font-size="10" fill="#166534">命中直接返回，不回源</text>
+            </svg>
+            <figcaption><strong>图 25-1　分层缓存吸收热 key（机制示意）。</strong>本地缓存（进程内 LRU，短 TTL）先在应用侧吸收同一 key 的峰值请求，未命中再查分片的 Memcached 集群，最后才回源数据库；对单 key 过热还可以在应用层做 key 扩散。图中 TTL、层数为示意；文章正文提到的一次压测中本地缓存带来 QPS 下降与延迟降低，属于该场景的经验数据，不在图中重复。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('fig-hotkey');
+                if (!svg) { return; }
+                var note = document.getElementById('hkNote');
+                var steps = [
+                    [0, '第 1 步 / 3：请求先查本地缓存；命中则直接返回，不回源。'],
+                    [1, '第 2 步 / 3：本地 miss，再查分片的 Memcached 集群。'],
+                    [2, '第 3 步 / 3：两层都 miss，才回源数据库，并需做回源限流。']
+                ];
+                var idx = 0;
+                var base = { hkL0: '#dcfce7', hkL1: '#dbeafe', hkL2: '#fef3c7' };
+                var ring = { hkL0: '#16a34a', hkL1: '#3b82f6', hkL2: '#f59e0b' };
+                function render() {
+                    ['hkL0', 'hkL1', 'hkL2'].forEach(function (id) {
+                        document.getElementById(id).setAttribute('fill', base[id]);
+                        document.getElementById(id).setAttribute('stroke', ring[id]);
+                        document.getElementById(id).setAttribute('stroke-width', '2');
+                    });
+                    var cur = 'hkL' + steps[idx][0];
+                    document.getElementById(cur).setAttribute('stroke', '#0f172a');
+                    document.getElementById(cur).setAttribute('stroke-width', '3.5');
+                    note.textContent = steps[idx][1];
+                }
+                document.getElementById('hkNext').addEventListener('click', function () { idx = (idx + 1) % steps.length; render(); });
+                document.getElementById('hkReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
+
         <h2>连接数过多导致的内存分配失败</h2>
 
         <p>每个连接到 Memcached 的客户端都会消耗大约 <strong>16KB 的读缓冲区</strong>（在 <code>conn_new()</code> 中通过 <code>malloc</code> 分配）。这个缓冲区在连接建立时分配，在连接关闭时释放。</p>
@@ -200,6 +278,26 @@ def get_with_local_cache(key):
             <li>在 Memcached 侧设置合理的 <code>-c</code> 参数，限制最大连接数。</li>
             <li>监控 <code>curr_connections</code> 和 <code>listen_disabled_num</code>，设置告警阈值。</li>
         </ul>
+
+        <figure class="diagram" id="fig-connmem">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="cmTitle cmDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="cmTitle">连接数增长时读缓冲内存的消耗</title>
+                <desc id="cmDesc">每个连接约消耗 16KB 读缓冲：1 万连接约 160MB，5 万约 800MB，10 万约 1.6GB，还未含写缓冲与连接结构本身的开销。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">连接本身吃掉的内存：16KB 读缓冲 × 连接数</text>
+                <line x1="80" y1="190" x2="720" y2="190" stroke="#94a3b8" stroke-width="2"/>
+                <rect x="140" y="177" width="100" height="13" fill="#93c5fd" stroke="#3b82f6" stroke-width="1.5"/>
+                <rect x="330" y="125" width="100" height="65" fill="#60a5fa" stroke="#3b82f6" stroke-width="1.5"/>
+                <rect x="520" y="60" width="100" height="130" fill="#ef4444" stroke="#dc2626" stroke-width="1.5"/>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="190" y="170">~160MB</text><text x="380" y="118">~800MB</text><text x="570" y="53">~1.6GB</text>
+                </g>
+                <g font-size="11" fill="#334155" text-anchor="middle">
+                    <text x="190" y="210">1 万连接</text><text x="380" y="210">5 万连接</text><text x="570" y="210">10 万连接</text>
+                </g>
+                <text x="380" y="238" font-size="11" fill="#b91c1c" text-anchor="middle">再加上写缓冲与 conn 结构（每个约 20–30KB），10 万连接可占 2–3GB。</text>
+            </svg>
+            <figcaption><strong>图 25-2　连接数对内存的消耗（按 16KB/连接估算）。</strong>每个连接在建立时分配约 16KB 读缓冲，条高按此线性推算：1 万/5 万/10 万连接约为 160MB / 800MB / 1.6GB；这只是读缓冲，完整开销（含写缓冲与 <code>struct conn</code>）每个连接约 20–30KB。若不做限制，连接会挤占缓存数据内存、引发 evict 与命中率暴跌，因此应配置 <code>-c</code> 上限并监控 <code>curr_connections</code>。</figcaption>
+        </figure>
 
         <h2>Chunk Size 选择不当的惨案</h2>
 
@@ -505,7 +603,7 @@ memaslap --servers=127.0.0.1:11211 \
             <a href="index.html">📖 返回目录</a>
             <a href="26.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
