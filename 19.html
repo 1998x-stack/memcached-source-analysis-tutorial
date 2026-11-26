@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第19章 ASCII协议：proto_text详解</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第19章 ASCII协议：proto_text详解</h1>
 
         <p>大家好，我是你们的讲师。这一章我们进入一个"看得见摸得着"的模块——ASCII 文本协议。如果你用 telnet 连过 Memcached，那你一定敲过这样的命令：<code>set mykey 0 3600 5</code>，然后回车输入 <code>hello</code>，再回车。这个看似简单的交互背后，是 proto_text.c 中约 2000 行代码在支撑着整个协议解析与分发的全过程。</p>
@@ -135,6 +152,81 @@
             <strong>值得留意的设计：</strong>命令匹配用的是朴素的线性查找——对于只有十几个命令的表来说，这比哈希表更简洁，而且 CPU cache 更友好。不要在任何地方都用"高级"算法，简单就是美。
         </div>
 
+        <figure class="diagram" id="fig-dispatch">
+            <div class="figure-controls">
+                <button type="button" id="dpNext">下一步</button>
+                <button type="button" id="dpReset">重置</button>
+            </div>
+            <p class="diagram-note" id="dpNote">输入行：set username 0 3600 5\r\n</p>
+            <svg id="dpSvg" viewBox="0 0 760 300" role="img" aria-labelledby="dpTitle dpDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="dpTitle">ASCII 命令的分词、查表与分发</title>
+                <desc id="dpDesc">输入行先被 tokenize 拆成多个 token，然后按首个 token 在后命令表中线性匹配，命中后分发到对应的处理函数。</desc>
+                <defs><marker id="dpArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">process_command()：从文本行到处理函数</text>
+                <rect id="dpRaw" x="40" y="40" width="680" height="40" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="60" y="65" font-size="13" font-family="monospace" fill="#0f172a">set username 0 3600 5\r\n</text>
+                <text x="40" y="104" font-size="11" fill="#475569">tokenize_command() 按空格拆分</text>
+                <g stroke-width="1.6">
+                    <rect id="dt0" x="40" y="114" width="120" height="36" rx="6" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="dt1" x="168" y="114" width="120" height="36" rx="6" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="dt2" x="296" y="114" width="120" height="36" rx="6" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="dt3" x="424" y="114" width="120" height="36" rx="6" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="dt4" x="552" y="114" width="120" height="36" rx="6" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="12" font-family="monospace" fill="#0f172a" text-anchor="middle">
+                    <text x="100" y="137">set</text><text x="228" y="137">username</text><text x="356" y="137">0</text><text x="484" y="137">3600</text><text x="612" y="137">5</text>
+                </g>
+                <rect id="dpTbl" x="40" y="186" width="300" height="90" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="190" y="208" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle">command_table[] 线性查找</text>
+                <g font-size="11" font-family="monospace" fill="#475569" text-anchor="middle">
+                    <text x="190" y="230">get / gets / set / add</text><text x="190" y="248">replace / delete / incr / decr</text><text x="190" y="266">cas / append / prepend / …</text>
+                </g>
+                <rect id="dpHnd" x="420" y="186" width="300" height="90" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="570" y="222" font-size="12" fill="#0f172a" text-anchor="middle">switch(comm) 分发</text>
+                <text id="dpHndTxt" x="570" y="246" font-size="11" font-family="monospace" fill="#1e3a8a" text-anchor="middle">process_update_command()</text>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#dpArrow)">
+                    <line x1="380" y1="80" x2="380" y2="110"/>
+                    <line x1="190" y1="150" x2="190" y2="182"/>
+                    <line x1="340" y1="231" x2="416" y2="231"/>
+                </g>
+            </svg>
+            <figcaption><strong>图 19-1　ASCII 命令从分词到分发的路径（机制示意）。</strong><code>process_command()</code> 先用 <code>tokenize_command()</code> 把输入行拆成 token，再用首个 token 与 <code>command_table[]</code> 顺序匹配，命中后按 <code>enum commands</code> 分发到具体处理函数（此处以 <code>set</code> → <code>process_update_command()</code> 为例）。表内命令名与匹配方式对应源码中的线性 <code>strncmp</code> 查找。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('dpSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('dpNote');
+                var steps = [
+                    { ids: ['dpRaw'], msg: '输入行：set username 0 3600 5\\r\\n' },
+                    { ids: ['dt0', 'dt1', 'dt2', 'dt3', 'dt4'], msg: 'tokenize_command() 拆出 5 个 token。' },
+                    { ids: ['dpTbl'], msg: '用首个 token “set” 与 command_table[] 顺序匹配，命中 set。' },
+                    { ids: ['dpHnd'], msg: 'switch(comm) 分发到 process_update_command()。' }
+                ];
+                var idx = 0;
+                var all = ['dpRaw', 'dt0', 'dt1', 'dt2', 'dt3', 'dt4', 'dpTbl', 'dpHnd'];
+                function render() {
+                    all.forEach(function (id) {
+                        var el = document.getElementById(id);
+                        el.setAttribute('fill', '#f1f5f9');
+                        el.setAttribute('stroke', '#94a3b8');
+                        el.setAttribute('stroke-width', '1.6');
+                    });
+                    steps[idx].ids.forEach(function (id) {
+                        var el = document.getElementById(id);
+                        el.setAttribute('fill', '#dbeafe');
+                        el.setAttribute('stroke', '#2563eb');
+                        el.setAttribute('stroke-width', '2.6');
+                    });
+                    note.textContent = '第 ' + (idx + 1) + ' 步 / 4：' + steps[idx].msg;
+                }
+                document.getElementById('dpNext').addEventListener('click', function () { idx = (idx + 1) % steps.length; render(); });
+                document.getElementById('dpReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
+
         <h2>GET 命令处理</h2>
 
         <p>GET 是最简单的命令，也是理解 Memcached 读写路径最好的起点。<code>process_get_command()</code> 的工作流程如下：</p>
@@ -220,6 +312,29 @@ if (c->noreply) {
 out_string(c, "STORED\r\n");  // 只有 noreply=false 时才发送</code></pre>
 
         <p>noreply 的应用场景非常明确：<strong>写操作不需要确认</strong>。比如日志处理场景中，每条日志写入 Memcached 后不需要关心是否写成功（丢了也没关系），这时用 noreply 可以减少约 30% 的网络开销。但注意：<strong>读操作不能用 noreply</strong>——你读数据就是想等结果，这是语义上矛盾的事情。</p>
+
+        <figure class="diagram" id="fig-noreply">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="nrTitle nrDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="nrTitle">普通写与 noreply 写的网络往返对比</title>
+                <desc id="nrDesc">普通写发出 SET 后需等待服务端返回 STORED 才能发下一条；noreply 写发出 SET noreply 后不等响应，可立即继续发送下一条命令。</desc>
+                <defs><marker id="nrArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">noreply：用“不等确认”换吞吐</text>
+                <text x="60" y="56" font-size="12" fill="#334155">客户端</text>
+                <text x="700" y="56" font-size="12" fill="#334155" text-anchor="end">服务端</text>
+                <text x="60" y="86" font-size="12" font-weight="700" fill="#1d4ed8">普通写</text>
+                <line x1="120" y1="104" x2="650" y2="104" stroke="#2563eb" stroke-width="2" marker-end="url(#nrArrow)"/>
+                <text x="385" y="98" font-size="11" fill="#1e3a8a" text-anchor="middle">SET key …\r\n</text>
+                <line x1="650" y1="132" x2="120" y2="132" stroke="#16a34a" stroke-width="2" marker-end="url(#nrArrow)"/>
+                <text x="385" y="126" font-size="11" fill="#14532d" text-anchor="middle">STORED\r\n（等到才能继续）</text>
+                <line x1="40" y1="158" x2="720" y2="158" stroke="#cbd5e1" stroke-dasharray="5 5"/>
+                <text x="60" y="188" font-size="12" font-weight="700" fill="#b45309">noreply 写</text>
+                <line x1="120" y1="206" x2="650" y2="206" stroke="#f59e0b" stroke-width="2" marker-end="url(#nrArrow)"/>
+                <text x="385" y="200" font-size="11" fill="#92400e" text-anchor="middle">SET noreply key …\r\n</text>
+                <line x1="120" y1="232" x2="650" y2="232" stroke="#f59e0b" stroke-width="2" marker-end="url(#nrArrow)"/>
+                <text x="385" y="226" font-size="11" fill="#92400e" text-anchor="middle">紧接着下一条（不等待任何响应）</text>
+            </svg>
+            <figcaption><strong>图 19-2　普通写与 noreply 写的往返差异（教学示意）。</strong>普通写每发一条要等一条响应，往返延迟累加；<code>noreply</code> 写把“不关心是否成功”的写操作合流，省掉服务端响应与客户端等待。图中箭头仅表示发收顺序，不代表具体延迟或吞吐数值；读操作不能使用 noreply，因为读必须等待结果。</figcaption>
+        </figure>
 
         <h2>CAS 命令的协议实现</h2>
 
@@ -367,7 +482,7 @@ if (ITEM_get_cas(it) == req_cas_id) {
             <a href="index.html">📖 返回目录</a>
             <a href="20.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
