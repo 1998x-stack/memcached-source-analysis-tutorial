@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第16章 连接状态机：drive_machine详解</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第16章 连接状态机：drive_machine详解</h1>
 
         <p>大家好，我是你们的讲师。上一章我们说到，event_handler 接收到 libevent 的事件通知后，什么实际工作也没做——它只是把控制权转交给了 <code>drive_machine()</code>。那么 drive_machine 到底做了什么？答案是：它实现了一个<strong>连接状态机</strong>，这也是 Memcached 网络层最核心、最精妙的部分。</p>
@@ -299,7 +316,29 @@ static void drive_machine(conn *c) {
     }
     break;</code></pre>
 
-        <p>注意 <code>c->rlbytes</code> 和 <code>c->rcurr</code> 的作用：它们记录着"还需要读多少字节"和"当前写到哪了"。这是实现"部分读取"的关键——TCP 是流式协议，一个包可能只带了 value 的一部分，下一次数据到达后继续从断点读起。</p>
+        <p>注意 <code>c->rlbytes</code> 和 <code>c->rcurr</code> 的作用:它们记录着"还需要读多少字节"和"当前写到哪了"。这是实现“部分读取”的关键——TCP 是流式协议，一个包可能只带了 value 的一部分，下一次数据到达后继续从断点读起。</p>
+
+        <figure class="diagram" id="fig-nread">
+            <svg viewBox="0 0 760 230" role="img" aria-labelledby="nreadTitle nreadDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="nreadTitle">conn_nread 部分读取时 rlbytes 的递减</title>
+                <desc id="nreadDesc">set 的 value 共 5 字节：第一次读事件到达 2 字节，rlbytes 由 5 减到 3；第二次到达 3 字节，rlbytes 归零并调用 complete_nread。</desc>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">conn_nread：value 分两次到达，rlbytes 递减到 0</text>
+                <rect x="60" y="66" width="150" height="44" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+                <rect x="210" y="66" width="225" height="44" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+                <text x="135" y="93" font-size="12" fill="#1e3a8a" text-anchor="middle">第 1 片：2 字节</text>
+                <text x="322" y="93" font-size="12" fill="#14532d" text-anchor="middle">第 2 片：3 字节</text>
+                <text x="497" y="93" font-size="11" fill="#334155">value = 5 字节</text>
+                <text x="60" y="150" font-size="11" fill="#334155">初始：rlbytes = 5</text>
+                <text x="210" y="150" font-size="11" fill="#1d4ed8">读到 2 字节后：rlbytes = 3，返回等待下一次事件</text>
+                <text x="435" y="150" font-size="11" fill="#166534">再读到 3 字节：rlbytes = 0</text>
+                <line x1="210" y1="112" x2="210" y2="132" stroke="#64748b" stroke-width="1.6" marker-end="url(#naArrow)"/>
+                <line x1="435" y1="112" x2="435" y2="132" stroke="#64748b" stroke-width="1.6" marker-end="url(#naArrow)"/>
+                <defs><marker id="naArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <rect x="60" y="176" width="375" height="34" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+                <text x="247" y="198" font-size="12" fill="#14532d" text-anchor="middle">rlbytes 归零 → 调用 complete_nread(c) → process_command()</text>
+            </svg>
+            <figcaption><strong>图 16-2　部分读取下的进度管理（机制示意）。</strong>Memcached 不在一次读事件中假定能收到完整数据：<code>c->rlbytes</code> 记录还需多少字节，<code>c->rcurr</code> 记录写入位置。图中 value 恰好分两个 TCP 分片到达，是教学拆解；实际分片边界由网络决定，字节数与分片数仅为示意。</figcaption>
+        </figure>
 
         <h2>conn_mwrite：批量写响应</h2>
 
@@ -357,65 +396,99 @@ static void drive_machine(conn *c) {
             <strong>容错设计：</strong>conn_swallow 体现了 Memcached 的"尽力恢复"哲学。它不会因为一个错误命令就关闭连接，而是尝试丢弃错误数据、恢复协议同步。这种设计在生产环境中非常重要，因为客户端 bug 或网络问题导致的畸形数据很常见，断开连接的成本远比丢弃几字节数据高。
         </div>
 
-        <h2>状态转换图（ASCII art）</h2>
+        <h2>完整状态转换图</h2>
 
-        <p>为了帮助大家从整体上理解状态机的结构，下面是完整的 ASCII 状态转换图：</p>
+        <p>为了帮助大家从整体上理解状态机的结构，下面用可交互的状态图展示连接的生命周期；点击“下一步”可逐步跟踪一条 set 请求走过的状态：</p>
 
-        <pre><code>                    ┌──────────────────────┐
-                    │   conn_listening      │  ← 主线程
-                    │   (accept 新连接)      │
-                    └──────────┬───────────┘
-                               │ dispatch_conn_new()
-                               ▼
-                    ┌──────────────────────┐
-              ┌───→│   conn_new_cmd        │
-              │    │   (重置上下文)          │
-              │    └──────────┬───────────┘
-              │               │
-              │               ▼
-              │    ┌──────────────────────┐
-              │    │   conn_waiting        │ ←─ 注册 libevent 事件
-              │    │   (等待 EV_READ)      │
-              │    └──────────┬───────────┘
-              │               │ EV_READ 触发
-              │               ▼
-              │    ┌──────────────────────┐
-              │    │   conn_read           │
-              │    │   (读数据到 rbuf)      │
-              │    └──────────┬───────────┘
-              │               │
-              │               ▼
-              │    ┌──────────────────────┐
-              │    │   conn_parse_cmd      │
-              │    │   (解析命令类型)       │
-              │    └──────┬───────────┬───┘
-              │           │           │
-              │    需要数据体    无需数据体
-              │           │           │
-              │           ▼           │
-              │    ┌──────────┐       │
-              │    │conn_nread│       │
-              │    │(读value) │       │
-              │    └────┬─────┘       │
-              │         │ 读完       │
-              │         ▼            │
-              │    ┌──────────┐      │
-              │    │conn_mwrite│◄─────┘
-              │    │(写响应)   │
-              │    └────┬─────┘
-              │         │ 写完
-              └─────────┘
-              (回到 conn_new_cmd)
+        <figure class="diagram" id="fig-fsm">
+            <div class="figure-controls">
+                <button type="button" id="fsmNext">下一步</button>
+                <button type="button" id="fsmReset">重置</button>
+            </div>
+            <p class="diagram-note" id="fsmNote">第 1 步 / 8：conn_listening（主线程）等待新连接。</p>
+            <svg id="fsmSvg" viewBox="0 0 760 440" role="img" aria-labelledby="fsmTitle fsmDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="fsmTitle">连接状态机的状态与转移</title>
+                <desc id="fsmDesc">主线程在 conn_listening 接受连接后进入 conn_new_cmd、conn_waiting、conn_read、conn_parse_cmd；若命令带数据体则进入 conn_nread，再进入 conn_mwrite 写响应并回到 conn_new_cmd；协议错误时进入 conn_swallow。</desc>
+                <defs><marker id="fsmArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">一条 set 请求的状态旅程（主路径加粗）</text>
+                <g stroke-width="1.6">
+                    <rect id="fs0" x="50" y="40" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs1" x="400" y="40" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs2" x="400" y="140" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs3" x="50" y="140" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs4" x="50" y="240" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs5" x="400" y="240" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs6" x="400" y="340" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="fs7" x="50" y="340" width="300" height="50" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="200" y="62">conn_listening</text><text x="200" y="80" font-size="10" fill="#475569">accept 新连接（主线程）</text>
+                    <text x="550" y="62">conn_new_cmd</text><text x="550" y="80" font-size="10" fill="#475569">重置命令上下文</text>
+                    <text x="550" y="162">conn_waiting</text><text x="550" y="180" font-size="10" fill="#475569">注册 libevent 事件</text>
+                    <text x="200" y="162">conn_read</text><text x="200" y="180" font-size="10" fill="#475569">read() 到 rbuf</text>
+                    <text x="200" y="262">conn_parse_cmd</text><text x="200" y="280" font-size="10" fill="#475569">解析命令行</text>
+                    <text x="550" y="262">conn_nread</text><text x="550" y="280" font-size="10" fill="#475569">读取 value 数据体</text>
+                    <text x="550" y="362">conn_mwrite</text><text x="550" y="380" font-size="10" fill="#475569">writev() 写响应</text>
+                    <text x="200" y="362">conn_swallow</text><text x="200" y="380" font-size="10" fill="#475569">吞掉多余数据</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#fsmArrow)">
+                    <line x1="350" y1="65" x2="396" y2="65"/>
+                    <line x1="550" y1="90" x2="550" y2="136"/>
+                    <line x1="400" y1="165" x2="354" y2="165"/>
+                    <line x1="200" y1="190" x2="200" y2="236"/>
+                    <line x1="350" y1="265" x2="396" y2="265"/>
+                    <line x1="550" y1="290" x2="550" y2="336"/>
+                    <path d="M700,365 H735 V65 H704"/>
+                    <line x1="120" y1="290" x2="120" y2="336"/>
+                </g>
+                <g font-size="10" fill="#475569">
+                    <text x="373" y="58" text-anchor="middle">dispatch</text>
+                    <text x="563" y="118">重置完成</text>
+                    <text x="377" y="158" text-anchor="middle">数据就绪</text>
+                    <text x="210" y="217">EV_READ</text>
+                    <text x="373" y="258" text-anchor="middle">需要 value</text>
+                    <text x="562" y="318">读完</text>
+                    <text x="687" y="210" text-anchor="end">写完 → 回到 conn_new_cmd</text>
+                    <text x="128" y="318" fill="#b91c1c">协议错误</text>
+                </g>
+            </svg>
+            <figcaption><strong>图 16-1　连接状态机的状态与转移（机制示意）。</strong>加粗线为一条 set 请求的主路径：<code>conn_listening</code>（主线程 accept）→ <code>conn_new_cmd</code> → <code>conn_waiting</code> → <code>conn_read</code> → <code>conn_parse_cmd</code>；带 value 的写命令再走 <code>conn_nread</code> → <code>conn_mwrite</code>，写完回到 <code>conn_new_cmd</code>；若解析出错则进入 <code>conn_swallow</code> 丢弃多余数据。图中的状态名与转移关系对应源码中 <code>enum conn_states</code> 与 <code>drive_machine()</code> 的 case 分支，按钮仅用于逐步高亮路径。</figcaption>
 
-              异常路径:
-              conn_read / conn_nread / conn_mwrite
-                       │ 出错
-                       ▼
-              ┌──────────────────────┐
-              │   conn_swallow        │ → 吞数据 → conn_new_cmd
-              │   conn_closing        │ → 正常关闭
-              │   conn_immediate_close│ → 强制关闭
-              └──────────────────────┘</code></pre>
+        <script>
+            (function () {
+                var svg = document.getElementById('fsmSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('fsmNote');
+                var path = [
+                    [0, '第 1 步 / 8：conn_listening（主线程）等待新连接。'],
+                    [1, '第 2 步 / 8：accept 后 dispatch_conn_new，进入 conn_new_cmd 重置上下文。'],
+                    [2, '第 3 步 / 8：conn_waiting 注册 libevent 事件，停止状态机等待数据。'],
+                    [3, '第 4 步 / 8：EV_READ 触发，conn_read 把数据读入 rbuf。'],
+                    [4, '第 5 步 / 8：conn_parse_cmd 解析 set 命令行，得知 value 长度。'],
+                    [5, '第 6 步 / 8：conn_nread 读取 value，完成后调用 complete_nread。'],
+                    [6, '第 7 步 / 8：conn_mwrite 用 writev 写回 STORED。'],
+                    [1, '第 8 步 / 8：写完回到 conn_new_cmd，处理下一条命令。']
+                ];
+                var idx = 0;
+                function render() {
+                    for (var i = 0; i < 8; i++) {
+                        var el = document.getElementById('fs' + i);
+                        el.setAttribute('fill', '#f1f5f9');
+                        el.setAttribute('stroke', '#94a3b8');
+                        el.setAttribute('stroke-width', '1.6');
+                    }
+                    var cur = path[idx][0];
+                    document.getElementById('fs' + cur).setAttribute('fill', '#dbeafe');
+                    document.getElementById('fs' + cur).setAttribute('stroke', '#2563eb');
+                    document.getElementById('fs' + cur).setAttribute('stroke-width', '3');
+                    note.textContent = path[idx][1];
+                }
+                document.getElementById('fsmNext').addEventListener('click', function () { idx = (idx + 1) % path.length; render(); });
+                document.getElementById('fsmReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
+        </figure>
 
         <h2>stop 条件：何时停止状态机</h2>
 
@@ -462,7 +535,7 @@ static void drive_machine(conn *c) {
             <a href="index.html">📖 返回目录</a>
             <a href="17.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
