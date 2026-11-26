@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第24章 测试体系：t目录与测试框架</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第24章 测试体系：t目录与测试框架</h1>
 
         <p>大家好，我是你们的讲师。前23章我们一行一行地读代码，分析设计，但有一个问题可能一直盘旋在你脑海里：<strong>维护者怎么保证这些代码是正确的？</strong>一个有着20多年历史的C项目，经历了数十位贡献者的修改、数百个bug fix、以及横跨三个大版本的演进——没有一个靠谱的测试体系，这简直不可想象。</p>
@@ -285,6 +302,66 @@ int main() {
 
         <p>这种做法的缺点是需要手动管理编译和链接，不能自动集成到 <code>make test</code> 中。不过对于调试阶段的快速验证，它非常有效。</p>
 
+        <figure class="diagram" id="fig-maketest">
+            <div class="figure-controls">
+                <button type="button" id="mtNext">下一步</button>
+                <button type="button" id="mtReset">重置</button>
+            </div>
+            <p class="diagram-note" id="mtNote">第 1 步 / 4：先编译 memcached 二进制。</p>
+            <svg id="mtSvg" viewBox="0 0 760 230" role="img" aria-labelledby="mtTitle mtDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="mtTitle">make test 的执行流程</title>
+                <desc id="mtDesc">make test 先编译 memcached，再用 prove 运行 t 目录下的测试；每个测试文件启动一个真实 memcached 进程并通过 TCP 发命令断言，最后汇总结果。</desc>
+                <defs><marker id="mtArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">make test 的执行流程</text>
+                <g stroke-width="1.6">
+                    <rect id="t0" x="30" y="80" width="150" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="t1" x="215" y="80" width="150" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="t2" x="400" y="80" width="150" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="t3" x="585" y="80" width="150" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="105" y="108">① 编译</text><text x="290" y="108">② prove 运行</text><text x="475" y="108">③ 启进程断言</text><text x="660" y="108">④ 汇总结果</text>
+                </g>
+                <g font-size="10" fill="#475569" text-anchor="middle">
+                    <text x="105" y="128">构建 memcached</text><text x="290" y="128">prove -It/lib -r t/</text><text x="475" y="128">每个 .t 启真实实例</text><text x="660" y="128">perl Test::More</text>
+                    <text x="105" y="144">（有改动时）</text><text x="290" y="144">递归搜索 .t 文件</text><text x="475" y="144">TCP 发命令校对</text><text x="660" y="144">统计 pass/ fail</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#mtArrow)">
+                    <line x1="180" y1="120" x2="211" y2="120"/><line x1="365" y1="120" x2="396" y2="120"/><line x1="550" y1="120" x2="581" y2="120"/>
+                </g>
+                <text x="380" y="196" font-size="11" fill="#334155" text-anchor="middle">集成测试为主：每个 .t 启动真实 memcached 进程，端到端验证协议与内存行为。</text>
+            </svg>
+            <figcaption><strong>图 24-1　make test 的执行流程（机制示意）。</strong>Memcached 以 <code>prove + Test::More</code> 为主：先编译，再由 <code>prove -I t/lib/ -r t/</code> 递归运行 <code>t/</code> 下的 <code>.t</code> 文件；每个文件通过 <code>MemcachedTest.pm</code> 启动一个监听随机端口的真实实例，经 TCP 发送协议命令并断言，最后汇总。图中“4 步”为对执行流程的概念划分。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('mtSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('mtNote');
+                var steps = [
+                    '第 1 步 / 4：先编译 memcached 二进制（有改动时）。',
+                    '第 2 步 / 4：prove 递归运行 t/ 下的 .t 文件。',
+                    '第 3 步 / 4：每个 .t 启动真实实例，经 TCP 发命令断言。',
+                    '第 4 步 / 4：Test::More 汇总 pass/fail，prove 输出总计。'
+                ];
+                var idx = 0;
+                function render() {
+                    for (var i = 0; i < 4; i++) {
+                        var el = document.getElementById('t' + i);
+                        var on = (i === idx);
+                        el.setAttribute('fill', on ? '#dbeafe' : '#f1f5f9');
+                        el.setAttribute('stroke', on ? '#2563eb' : '#94a3b8');
+                        el.setAttribute('stroke-width', on ? '3' : '1.6');
+                    }
+                    note.textContent = steps[idx];
+                }
+                document.getElementById('mtNext').addEventListener('click', function () { idx = (idx + 1) % steps.length; render(); });
+                document.getElementById('mtReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
+
         <h2>make test 执行流程</h2>
 
         <p>当你运行 <code>make test</code> 时，实际上触发的是 <code>Makefile</code> 中定义的一套完整流程：</p>
@@ -395,6 +472,30 @@ valgrind --leak-check=full \
             <strong>注意：</strong>覆盖率数据基于经验估算，不是官方数据。但我们可以肯定的是：<strong>Memcached 的 CI 不会让你在核心路径上混过一个明显的 bug</strong>。不过，如果你修改了 LRU 或 slab reassign 这类并发密集的模块，单靠现有的集成测试可能不够——建议添加针对性的压力测试场景。
         </div>
 
+        <figure class="diagram" id="fig-coverage">
+            <svg viewBox="0 0 760 330" role="img" aria-labelledby="covTitle covDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="covTitle">各模块测试覆盖率的经验估算</title>
+                <desc id="covDesc">柱状图展示各模块测试覆盖率的经验估算值：二进制协议最高约 95%，外部存储最低约 65%。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">各模块测试覆盖率（经验估算，非官方数据）</text>
+                <line x1="210" y1="42" x2="210" y2="300" stroke="#94a3b8" stroke-width="1.6"/>
+                <g font-size="11" fill="#334155" text-anchor="end">
+                    <text x="200" y="57">ASCII 协议解析</text><text x="200" y="93">二进制协议</text><text x="200" y="129">Slab Allocator</text><text x="200" y="165">LRU 淘汰</text><text x="200" y="201">哈希表扩容</text><text x="200" y="237">Proxy / Lua</text><text x="200" y="273">外部存储</text>
+                </g>
+                <g>
+                    <rect x="210" y="46" width="450" height="16" rx="3" fill="#3b82f6"/><text x="668" y="59" font-size="11" fill="#1e3a8a">~90%</text>
+                    <rect x="210" y="82" width="475" height="16" rx="3" fill="#3b82f6"/><text x="693" y="95" font-size="11" fill="#1e3a8a">~95%</text>
+                    <rect x="210" y="118" width="400" height="16" rx="3" fill="#60a5fa"/><text x="618" y="131" font-size="11" fill="#1e3a8a">~80%</text>
+                    <rect x="210" y="154" width="375" height="16" rx="3" fill="#f59e0b"/><text x="593" y="167" font-size="11" fill="#92400e">~75%</text>
+                    <rect x="210" y="190" width="425" height="16" rx="3" fill="#60a5fa"/><text x="643" y="203" font-size="11" fill="#1e3a8a">~85%</text>
+                    <rect x="210" y="226" width="350" height="16" rx="3" fill="#f59e0b"/><text x="568" y="239" font-size="11" fill="#92400e">~70%</text>
+                    <rect x="210" y="262" width="325" height="16" rx="3" fill="#ef4444"/><text x="543" y="275" font-size="11" fill="#991b1b">~65%</text>
+                </g>
+                <g font-size="10" fill="#94a3b8"><text x="210" y="300">0%</text><text x="460" y="300" text-anchor="middle">50%</text><text x="710" y="300" text-anchor="end">100%</text></g>
+                <text x="380" y="322" font-size="11" fill="#475569" text-anchor="middle">越高色越绿，越低色越红；仅供参考，标注了可疑盲区。</text>
+            </svg>
+            <figcaption><strong>图 24-2　各模块测试覆盖率（经验估算）。</strong>数值直接取自本章表格中的经验估算，<strong>不是官方覆盖率数据</strong>；二者仅用于说明“哪些模块的自动化保护相对薄弱”。二进制协议接近全覆盖，外部存储与 Proxy/Lua 因依赖外部环境或组合爆炸而偏低。若修改 LRU 或 slab reassign 这类并发模块，单靠现有集成测试可能不够。</figcaption>
+        </figure>
+
         <h2>踩坑：CI 环境与本地环境的时区之争</h2>
 
         <p>最后分享一个真实的踩坑经历。有一次我给 Memcached 提交了一个 PR，修改了 <code>expirations.c</code> 中 TTL 计算的逻辑。所有测试在本地（Ubuntu 22.04，UTC+8）都通过了，CI 也显示绿色。但过了两周，有用户报告说他们的 Memcached 在 UTC+0 时区的机器上 TTL 快了整整 8 小时。</p>
@@ -427,7 +528,7 @@ is($actual, $expected, "expire time should be now+3600");
             <a href="index.html">📖 返回目录</a>
             <a href="25.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
