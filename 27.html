@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第27章 Memcached的未来与社区生态</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html" class="active">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第27章 Memcached的未来与社区生态</h1>
 
         <p>大家好，我是你们的讲师。上一章我们用一整章的篇幅做了 Memcached 与 Redis/Valkey 的源码级对比。如果说第26章是"回头看"——回顾已有的设计与差异，那这一章就是"向前看"——看看 Memcached 这个有 20 年历史的项目，在 2025-2026 这个时间点上正在走向哪里。</p>
@@ -88,6 +105,63 @@
             <li>支持 NVMe over TCP 的远程存储后端</li>
             <li>引入自动分层策略——热数据在 DRAM、温数据在 SSD、冷数据自动淘汰</li>
         </ul>
+
+        <figure class="diagram" id="fig-roadmap">
+            <div class="figure-controls">
+                <button type="button" id="rmNext">下一步</button>
+                <button type="button" id="rmReset">重置</button>
+            </div>
+            <p class="diagram-note" id="rmNote">第 1 条 / 3：Meta Protocol 全面化。</p>
+            <svg id="rmSvg" viewBox="0 0 760 300" role="img" aria-labelledby="rmTitle rmDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="rmTitle">Memcached 2025-2026 路线图的三个方向</title>
+                <desc id="rmDesc">三个开发方向：Meta Protocol 全面化、Proxy 增强、Extstore 稳定化，每个方向列出若干计划项。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">路线图三方向（据社区讨论整理）</text>
+                <g stroke-width="1.6">
+                    <rect id="rl0" x="20" y="40" width="720" height="74" rx="10" fill="#eef4ff" stroke="#c7d8f5"/>
+                    <rect id="rl1" x="20" y="124" width="720" height="74" rx="10" fill="#f0fdf4" stroke="#bbf7d0"/>
+                    <rect id="rl2" x="20" y="208" width="720" height="74" rx="10" fill="#fff7ed" stroke="#fed7aa"/>
+                </g>
+                <g font-size="11" font-weight="700">
+                    <text x="34" y="66" fill="#1d4ed8">Meta 全面化</text><text x="34" y="150" fill="#15803d">Proxy 增强</text><text x="34" y="234" fill="#c2410c">Extstore 稳定化</text>
+                </g>
+                <g fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4">
+                    <rect x="180" y="58" width="126" height="38" rx="6"/><rect x="320" y="58" width="126" height="38" rx="6"/><rect x="460" y="58" width="126" height="38" rx="6"/><rect x="600" y="58" width="126" height="38" rx="6"/>
+                    <rect x="180" y="142" width="126" height="38" rx="6"/><rect x="320" y="142" width="126" height="38" rx="6"/><rect x="460" y="142" width="126" height="38" rx="6"/><rect x="600" y="142" width="126" height="38" rx="6"/>
+                    <rect x="180" y="226" width="126" height="38" rx="6"/><rect x="320" y="226" width="126" height="38" rx="6"/><rect x="460" y="226" width="126" height="38" rx="6"/>
+                </g>
+                <g font-size="10" fill="#334155" text-anchor="middle">
+                    <text x="243" y="81">补齐 Meta 命令</text><text x="383" y="81">解析性能提升</text><text x="523" y="81">SASL 认证</text><text x="663" y="81">多语言 SDK</text>
+                    <text x="243" y="165">ketama 重分配</text><text x="383" y="165">Lua 沙箱加固</text><text x="523" y="165">健康检查</text><text x="663" y="165">多实例同步</text>
+                    <text x="243" y="249">简化配置参数</text><text x="383" y="249">NVMe over TCP</text><text x="523" y="249">自动分层策略</text>
+                </g>
+            </svg>
+            <figcaption><strong>图 27-1　路线图的三个方向（据社区讨论整理）。</strong>三个方向的计划项来自 Dormando 在邮件列表与 GitHub 中的公开讨论：Meta Protocol 全面化（补齐命令、提升解析、加 SASL、多语言 SDK）、Proxy 增强（ketama 重分配、Lua 沙箱、健康检查、多实例同步）、Extstore 稳定化（简化配置、远程存储、自动分层）。图为计划项示意，不代表已发布版本，具体以官方发布为准。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('rmSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('rmNote');
+                var msgs = [
+                    '第 1 条 / 3：Meta Protocol 全面化 — 补齐命令、提升解析、SASL、多语言 SDK。',
+                    '第 2 条 / 3：Proxy 增强 — ketama 重分配、Lua 沙箱加固、健康检查与多实例同步。',
+                    '第 3 条 / 3：Extstore 稳定化 — 简化配置、NVMe over TCP、自动分层策略。'
+                ];
+                var idx = 0;
+                function render() {
+                    for (var i = 0; i < 3; i++) {
+                        var el = document.getElementById('rl' + i);
+                        el.setAttribute('stroke-width', i === idx ? '3' : '1.6');
+                        el.setAttribute('stroke', i === idx ? '#0f172a' : ['#c7d8f5', '#bbf7d0', '#fed7aa'][i]);
+                    }
+                    note.textContent = msgs[idx];
+                }
+                document.getElementById('rmNext').addEventListener('click', function () { idx = (idx + 1) % 3; render(); });
+                document.getElementById('rmReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
 
         <h2>社区维护现状</h2>
 
@@ -275,6 +349,32 @@
   需要集群/哨兵等高可用机制   → Valkey（Redis Cluster 成熟）
   需要细粒度监控/诊断         → Redis / Valkey（INFO 命令更丰富）</code></pre>
 
+        <figure class="diagram" id="fig-decide">
+            <svg viewBox="0 0 760 280" role="img" aria-labelledby="dcTitle dcDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="dcTitle">Memcached 选型三步决策流程</title>
+                <desc id="dcDesc">依次问三个问题：是否需要持久化或复杂数据结构、流量与 value 规模、运维能力，每步分别导向 Redis/Valkey 或 Memcached。</desc>
+                <defs><marker id="dcArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">选型三步框架</text>
+                <g fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6">
+                    <rect x="30" y="36" width="300" height="52" rx="10"/><rect x="30" y="112" width="300" height="52" rx="10"/><rect x="30" y="188" width="300" height="52" rx="10"/>
+                </g>
+                <g font-size="11" fill="#0f172a">
+                    <text x="46" y="58">① 需要持久化 / Lua / 复杂结构？</text><text x="46" y="76" font-size="10" fill="#475569">List / Set / ZSet、事务、发布订阅…</text>
+                    <text x="46" y="134">② QPS &gt; 100 万 或 value 大且不均？</text><text x="46" y="152" font-size="10" fill="#475569">高并发、slab 友好的负载</text>
+                    <text x="46" y="210">③ 需要集群 / 哨兵等高可用？</text><text x="46" y="228" font-size="10" fill="#475569">原生分片、自动故障转移</text>
+                </g>
+                <g fill="#fef3c7" stroke="#f59e0b" stroke-width="1.6"><rect x="470" y="36" width="260" height="52" rx="10"/><rect x="470" y="188" width="260" height="52" rx="10"/></g>
+                <g fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"><rect x="470" y="112" width="260" height="52" rx="10"/></g>
+                <g font-size="11" text-anchor="middle"><text x="600" y="60" fill="#92400e">Redis / Valkey（功能更多）</text><text x="600" y="80" fill="#a16207" font-size="10">反之进入下一步</text><text x="600" y="138" fill="#14532d">Memcached（多线程 + slab）</text><text x="600" y="158" fill="#166534" font-size="10">否则两者皆可</text><text x="600" y="212" fill="#92400e">Valkey（Redis Cluster 成熟）</text><text x="600" y="232" fill="#a16207" font-size="10">否则 Memcached 更简运维</text></g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#dcArrow)">
+                    <line x1="330" y1="62" x2="466" y2="62"/><line x1="330" y1="138" x2="466" y2="138"/><line x1="330" y1="214" x2="466" y2="214"/>
+                    <line x1="180" y1="88" x2="180" y2="108"/><line x1="180" y1="164" x2="180" y2="184"/>
+                </g>
+                <g font-size="10" fill="#475569"><text x="398" y="56">满足</text><text x="398" y="132">满足</text><text x="398" y="208">满足</text><text x="188" y="104">否，继续</text><text x="188" y="180">否，继续</text></g>
+            </svg>
+            <figcaption><strong>图 27-2　Memcached 选型的三步决策框架（据本章正文整理）。</strong>先看是否需要持久化或复杂数据结构（需要则选 Redis/Valkey），再看流量与 value 规模（高并发、大而不均的 value 更适合 Memcached 的 slab 与多线程），最后看高可用与运维能力（需要成熟集群选 Valkey，追求最简运维选 Memcached）。图中判据与正文的三步框架一致，“条件”为概念示意。</figcaption>
+        </figure>
+
         <h2>如何在 Memcached 开源社区贡献代码</h2>
 
         <p>如果你在通读这个课程后有了向 Memcached 提交代码的冲动，这里有一些实用建议：</p>
@@ -313,7 +413,7 @@
             <a href="index.html">📖 返回目录</a>
             <a href="28.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
