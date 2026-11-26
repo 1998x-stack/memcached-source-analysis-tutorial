@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第23章 Built-in Proxy：Lua路由</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第23章 Built-in Proxy：Lua路由</h1>
 
         <p>大家好，我是你们的讲师。前几章我们聊了 Memcached 的内部存储、网络模型、协议解析，这些模块已经覆盖了单机 Memcached 的全部功能。但到了这一章，我们要聊一个完全不一样的话题——<strong>Proxy</strong>。</p>
@@ -66,6 +83,75 @@
         <div class="tip">
             <strong>架构印象：</strong>Memcached proxy 更像是一个"附带代理功能的缓存进程"，而不是一个通用的反向代理。它专为 Memcached 协议优化，不支持 HTTP 或其他协议转发。
         </div>
+
+        <figure class="diagram" id="fig-proxyarch">
+            <div class="figure-controls">
+                <button type="button" id="paSend">发送一个 GET 请求</button>
+                <button type="button" id="paReset">重置</button>
+            </div>
+            <p class="diagram-note" id="paNote">点击按钮，模拟 proxy 根据路由策略把请求转发到某个后端。</p>
+            <svg id="paSvg" viewBox="0 0 760 300" role="img" aria-labelledby="paTitle paDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="paTitle">Memcached 内置 proxy 的架构与钩子</title>
+                <desc id="paDesc">客户端请求进入单独的 proxy 端口，经 request hook、Lua 路由，转发到后端池中的某个实例，返回时再经 response hook 回给客户端。</desc>
+                <defs><marker id="paArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">嵌入在 Memcached 进程内部的 Lua proxy</text>
+                <rect x="30" y="120" width="120" height="64" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="90" y="148" font-size="12" fill="#0f172a" text-anchor="middle">客户端</text>
+                <text x="90" y="166" font-size="10" fill="#475569" text-anchor="middle">代理端口</text>
+                <rect x="200" y="66" width="270" height="176" rx="12" fill="#eef4ff" stroke="#c7d8f5" stroke-width="1.8"/>
+                <text x="335" y="88" font-size="12" font-weight="700" fill="#1e3a8a" text-anchor="middle">Memcached proxy 进程（Lua 5.4）</text>
+                <rect id="ph0" x="222" y="100" width="226" height="34" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="335" y="122" font-size="11" fill="#0f172a" text-anchor="middle">request hook：可改 key / 直接返回</text>
+                <rect id="ph1" x="222" y="142" width="226" height="34" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="335" y="164" font-size="11" fill="#0f172a" text-anchor="middle">router：ketama / random / modulo</text>
+                <rect id="ph2" x="222" y="184" width="226" height="34" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="335" y="206" font-size="11" fill="#0f172a" text-anchor="middle">response hook：记录 / 改写</text>
+                <rect id="be0" x="560" y="60" width="170" height="54" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <rect id="be1" x="560" y="128" width="170" height="54" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <rect id="be2" x="560" y="196" width="170" height="54" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <g font-size="11" fill="#334155" text-anchor="middle"><text x="645" y="92">后端 1:11211</text><text x="645" y="160">后端 2:11211</text><text x="645" y="228">后端 3:11211</text></g>
+                <line x1="150" y1="152" x2="196" y2="152" stroke="#64748b" stroke-width="1.8" marker-end="url(#paArrow)"/>
+                <g stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#paArrow)">
+                    <line id="pl0" x1="470" y1="158" x2="556" y2="90"/>
+                    <line id="pl1" x1="470" y1="158" x2="556" y2="158"/>
+                    <line id="pl2" x1="470" y1="158" x2="556" y2="226"/>
+                </g>
+            </svg>
+            <figcaption><strong>图 23-1　Memcached 内置 proxy 的架构与钩子（机制示意）。</strong>proxy 监听独立端口，请求依次经过 <code>request hook</code> → 路由（<code>ketama</code>/<code>random</code>/<code>modulo</code>）→ 后端池，返回时经过 <code>response hook</code>。路由与钩子均以 Lua 脚本定义，可不重启进程热更新。图中后端数量、端口为示意。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('paSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('paNote');
+                var n = 0;
+                function clear() {
+                    for (var i = 0; i < 3; i++) {
+                        document.getElementById('be' + i).setAttribute('fill', '#f1f5f9');
+                        document.getElementById('be' + i).setAttribute('stroke', '#94a3b8');
+                        document.getElementById('pl' + i).setAttribute('stroke', '#64748b');
+                        document.getElementById('pl' + i).setAttribute('stroke-width', '1.6');
+                    }
+                    ['ph0', 'ph1', 'ph2'].forEach(function (id) {
+                        document.getElementById(id).setAttribute('fill', '#f8fafc');
+                        document.getElementById(id).setAttribute('stroke', '#94a3b8');
+                    });
+                }
+                document.getElementById('paSend').addEventListener('click', function () {
+                    clear();
+                    var t = n % 3;
+                    ['ph0', 'ph1', 'ph2'].forEach(function (id) { document.getElementById(id).setAttribute('stroke', '#2563eb'); document.getElementById(id).setAttribute('fill', '#dbeafe'); });
+                    document.getElementById('be' + t).setAttribute('fill', '#dcfce7');
+                    document.getElementById('be' + t).setAttribute('stroke', '#16a34a');
+                    document.getElementById('pl' + t).setAttribute('stroke', '#16a34a');
+                    document.getElementById('pl' + t).setAttribute('stroke-width', '3');
+                    note.textContent = '第 ' + (n + 1) + ' 个 key 命中后端 ' + (t + 1) + '：请求经 request hook → 路由 → 转发，返回再经 response hook。';
+                    n++;
+                });
+                document.getElementById('paReset').addEventListener('click', function () { n = 0; clear(); note.textContent = '点击按钮，模拟 proxy 根据路由策略把请求转发到某个后端。'; });
+            })();
+        </script>
 
         <h2>启动 Proxy：加载 Lua 配置文件</h2>
 
@@ -245,6 +331,38 @@ end</code></pre>
             <strong>设计考量：</strong>failover 在某些场景下会导致"惊群效应"——当故障节点恢复时，大量积压请求同时涌入，可能打垮后端。建议在 failover 逻辑中加入限流或延迟重试的机制，而不是无条件重试。
         </div>
 
+        <figure class="diagram" id="fig-failover">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="foTitle foDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="foTitle">proxy 的故障转移决策流程</title>
+                <desc id="foDesc">请求命中后端 A 后判断其是否可用；可用则正常转发，不可用则进入 Lua failover 钩子，尝试下一个可用节点，否则返回错误。</desc>
+                <defs><marker id="foArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">故障转移：不可用时由 Lua failover 决定下一步</text>
+                <rect x="30" y="96" width="160" height="60" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="110" y="122" font-size="12" fill="#0f172a" text-anchor="middle">GET 命中后端 A</text>
+                <text x="110" y="140" font-size="10" fill="#475569" text-anchor="middle">路由（ketama）</text>
+                <polygon points="300,86 390,126 300,166 210,126" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+                <text x="300" y="130" font-size="11" fill="#854d0e" text-anchor="middle">A 可用?</text>
+                <line x1="190" y1="126" x2="206" y2="126" stroke="#64748b" stroke-width="1.8" marker-end="url(#foArrow)"/>
+                <rect x="430" y="40" width="170" height="56" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+                <text x="515" y="66" font-size="12" fill="#14532d" text-anchor="middle">正常转发，返回结果</text>
+                <text x="515" y="84" font-size="10" fill="#166534" text-anchor="middle">经 response hook</text>
+                <rect x="430" y="164" width="170" height="56" rx="10" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+                <text x="515" y="190" font-size="12" fill="#854d0e" text-anchor="middle">failover(ctx, A, err)</text>
+                <text x="515" y="208" font-size="10" fill="#a16207" text-anchor="middle">Lua 钩子决定重试策略</text>
+                <rect x="630" y="164" width="110" height="56" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="685" y="188" font-size="11" fill="#334155" text-anchor="middle">next_server</text>
+                <text x="685" y="205" font-size="11" fill="#334155" text-anchor="middle">→ B / 报错</text>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#foArrow)">
+                    <line x1="356" y1="100" x2="426" y2="70"/><line x1="346" y1="152" x2="426" y2="186"/>
+                </g>
+                <line x1="600" y1="192" x2="626" y2="192" stroke="#64748b" stroke-width="1.8" marker-end="url(#foArrow)"/>
+                <text x="392" y="74" font-size="10" fill="#166534">是</text>
+                <text x="360" y="186" font-size="10" fill="#b91c1c">否</text>
+                <text x="30" y="240" font-size="11" fill="#475569">对幂等的 GET 可重试其他节点；对非幂等的 SET 通常直接报错以避免数据不一致。</text>
+            </svg>
+            <figcaption><strong>图 23-2　proxy 的故障转移决策（机制示意）。</strong>路由选中后端后先判断其可用性：可用则正常转发；不可用则进入 Lua 的 <code>failover()</code> 回调，在其中可调用 <code>pool:next_server()</code> 取下一个节点或返回错误。由于 GET 幂等、SET 非幂等，生产实现常按命令类型区分重试策略。图为概念流程，非完整状态机。</figcaption>
+        </figure>
+
         <h2>Proxy 性能基准</h2>
 
         <p>既然多了一层转发，proxy 模式必然有性能损耗。根据官方 benchmark 数据，proxy 模式 vs 直连模式的吞吐对比如下：</p>
@@ -328,7 +446,7 @@ end)</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="24.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
