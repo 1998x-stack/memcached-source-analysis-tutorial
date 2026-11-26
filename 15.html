@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第15章 事件驱动：libevent集成</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第15章 事件驱动：libevent集成</h1>
 
         <p>大家好，我是你们的讲师。从这一章开始，我们进入本课程的第四个部分——<strong>网络与并发</strong>。前面 14 章我们一直在讲"数据怎么存"，从 slab allocator 到 item 再到 LRU 和哈希表，Memcached 的内部数据管理机制我们已经了然于胸。但有一个关键问题我们还没回答：<strong>数据是怎么进来的？</strong></p>
@@ -54,6 +71,39 @@
         <p>在传统的阻塞式网络编程中，每接受一个连接就创建一个线程去处理它。这种"一个连接一个线程"的模型在并发量低时很直观，但一旦连接数上升到几千甚至几万，线程上下文切换的开销就会让性能直线下降。Memcached 需要支持数千个并发连接，因此它选择了<strong>事件驱动</strong>模型——用少量的线程管理大量的连接，所有 I/O 操作都是非阻塞的。</p>
 
         <p>事件驱动模型的核心思想可以概括为一句话：<strong>你告诉我什么时候可以读/写，我再去读/写</strong>。应用程序向事件库注册感兴趣的 fd 和事件类型（可读、可写），然后进入事件循环。当 fd 就绪时，事件库回调注册的处理函数——这个模式就是经典的 Reactor 模式。</p>
+
+        <figure class="diagram" id="fig-models">
+            <svg viewBox="0 0 760 300" role="img" aria-labelledby="modelsTitle modelsDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="modelsTitle">每连接一线程与事件驱动两种并发模型对比</title>
+                <desc id="modelsDesc">左侧每连接一线程模型中，多个线程各自阻塞在 read 上，线程数随连接数线性增长；右侧事件驱动模型中，一个事件循环通过 epoll 监控所有连接，就绪时才回调处理，线程数固定。</desc>
+                <text x="16" y="24" font-size="14" font-weight="700" fill="#0f172a">并发 I/O 的两种组织方式</text>
+                <text x="180" y="52" font-size="12" font-weight="700" fill="#b45309" text-anchor="middle">每连接一线程（阻塞）</text>
+                <g fill="#fef3c7" stroke="#f59e0b" stroke-width="1.6">
+                    <rect x="40" y="66" width="280" height="30" rx="6"/>
+                    <rect x="40" y="104" width="280" height="30" rx="6"/>
+                    <rect x="40" y="142" width="280" height="30" rx="6"/>
+                    <rect x="40" y="180" width="280" height="30" rx="6"/>
+                </g>
+                <g font-size="11" fill="#92400e">
+                    <text x="56" y="86">线程 1　read(fd1, …) 阻塞</text>
+                    <text x="56" y="124">线程 2　read(fd2, …) 阻塞</text>
+                    <text x="56" y="162">线程 3　read(fd3, …) 阻塞</text>
+                    <text x="56" y="200">…　线程 N　read(fdN) 阻塞</text>
+                </g>
+                <text x="180" y="234" font-size="11" fill="#b45309" text-anchor="middle">线程数 ∝ 连接数，上下文切换开销大</text>
+                <line x1="380" y1="40" x2="380" y2="260" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <text x="580" y="52" font-size="12" font-weight="700" fill="#1d4ed8" text-anchor="middle">事件驱动（Reactor）</text>
+                <rect x="430" y="80" width="300" height="70" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+                <text x="580" y="108" font-size="12" font-weight="700" fill="#1e3a8a" text-anchor="middle">event_base 事件循环</text>
+                <text x="580" y="130" font-size="11" fill="#1e40af" text-anchor="middle">epoll_wait 等待 → 回调就绪 fd</text>
+                <rect x="430" y="168" width="300" height="52" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="580" y="192" font-size="11" fill="#334155" text-anchor="middle">固定少量线程，各自一个 event_base</text>
+                <text x="580" y="210" font-size="11" fill="#334155" text-anchor="middle">fd1…fdN 全部注册在同一事件循环上</text>
+                <line x1="580" y1="150" x2="580" y2="168" stroke="#64748b" stroke-width="1.8"/>
+                <text x="580" y="240" font-size="11" fill="#1d4ed8" text-anchor="middle">线程数固定，就绪才处理，无谓等待少</text>
+            </svg>
+            <figcaption><strong>图 15-1　两种并发 I/O 组织方式（教学示意）。</strong>左图是“一个连接一个线程”的阻塞模型，线程数随连接数线性增长，大量时间消耗在线程上下文切换上。右图是 Memcached 采用的 Reactor 模型：少量线程各自跑一个 <code>event_base</code>，把所有 fd 注册进去，由 <code>epoll_wait</code> 统一等待，只有 fd 就绪时才回调处理。图中共并发数、线程数均为示意，不涉及具体压测指标。</figcaption>
+        </figure>
 
         <p>Memcached 选用 libevent 作为事件库，没有自己造轮子。原因很简单：libevent 是 C 语言生态中最成熟的事件库之一，跨平台、高性能、社区活跃。自己实现 epoll/kqueue 封装不仅工作量大，而且容易踩坑——事实上，后面我们会提到，即便是 libevent 也踩过 epoll 的 bug。</p>
 
@@ -159,6 +209,66 @@ void event_handler(const evutil_socket_t fd, const short which, void *arg) {
 }</code></pre>
 
         <p><code>event_handler</code> 做的事情出奇地少——它只是记录了事件类型，然后调用 <code>drive_machine()</code>。这体现了 Memcached 的一个核心设计思想：<strong>事件层只负责告诉你"有事情发生了"，具体怎么做由连接状态机来决定</strong>。这种分离让代码结构非常清晰。</p>
+
+        <figure class="diagram" id="fig-flow">
+            <div class="figure-controls">
+                <button type="button" id="flowNext">下一步</button>
+                <button type="button" id="flowReset">重置</button>
+            </div>
+            <p class="diagram-note" id="flowNote">第 1 步 / 4：内核把已就绪的 fd 告知事件库。</p>
+            <svg id="flowSvg" viewBox="0 0 760 190" role="img" aria-labelledby="flowTitle flowDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="flowTitle">事件从内核就绪到 drive_machine 的传递路径</title>
+                <desc id="flowDesc">四个阶段依次为：内核就绪事件、libevent 从 epoll_wait 返回并分发、回调 event_handler、驱动 drive_machine 状态机。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">一次事件的处理路径</text>
+                <g id="flowNodes">
+                    <rect id="fn0" x="30" y="66" width="150" height="64" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                    <rect id="fn1" x="212" y="66" width="150" height="64" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                    <rect id="fn2" x="394" y="66" width="150" height="64" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                    <rect id="fn3" x="576" y="66" width="150" height="64" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="105" y="94">内核</text><text x="105" y="112" font-size="10" fill="#475569">fd 可读/可写</text>
+                    <text x="287" y="94">libevent</text><text x="287" y="112" font-size="10" fill="#475569">epoll_wait 返回</text>
+                    <text x="469" y="94">event_handler</text><text x="469" y="112" font-size="10" fill="#475569">统一回调入口</text>
+                    <text x="651" y="94">drive_machine</text><text x="651" y="112" font-size="10" fill="#475569">连接状态机</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#arrow)">
+                    <line x1="180" y1="98" x2="210" y2="98"/>
+                    <line x1="362" y1="98" x2="392" y2="98"/>
+                    <line x1="544" y1="98" x2="574" y2="98"/>
+                </g>
+                <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="380" y="166" font-size="11" fill="#334155" text-anchor="middle">事件层只报告“有事发生”，具体处理全部交给状态机。</text>
+            </svg>
+            <figcaption><strong>图 15-2　事件从内核到状态机的传递路径（机制示意）。</strong><code>event_handler</code> 只负责记录事件类型并调用 <code>drive_machine()</code>，自己不处理协议细节。这种分层使网络事件层与连接状态机解耦。图中阶段划分为概念性说明，按钮仅用于逐步高亮四阶段，不代表真实调用栈深度。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('flowSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('flowNote');
+                var steps = [
+                    '第 1 步 / 4：内核把已就绪的 fd 告知事件库。',
+                    '第 2 步 / 4：libevent 从 epoll_wait 返回，找到对应 event。',
+                    '第 3 步 / 4：回调 event_handler(fd, which, arg)。',
+                    '第 4 步 / 4：event_handler 调用 drive_machine(c) 处理连接。'
+                ];
+                var idx = 0;
+                function render() {
+                    for (var i = 0; i < 4; i++) {
+                        var on = (i === idx);
+                        document.getElementById('fn' + i).setAttribute('fill', on ? '#dbeafe' : '#f1f5f9');
+                        document.getElementById('fn' + i).setAttribute('stroke', on ? '#2563eb' : '#94a3b8');
+                        document.getElementById('fn' + i).setAttribute('stroke-width', on ? '2.6' : '1.6');
+                    }
+                    note.textContent = steps[idx];
+                }
+                document.getElementById('flowNext').addEventListener('click', function () { idx = (idx + 1) % 4; render(); });
+                document.getElementById('flowReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
 
         <h2>EV_PERSIST 模式下的事件处理</h2>
 
@@ -314,7 +424,7 @@ while (!stop_main_loop) {
             <a href="index.html">📖 返回目录</a>
             <a href="16.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
