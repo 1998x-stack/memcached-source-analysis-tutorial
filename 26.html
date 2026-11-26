@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第26章 Memcached vs Redis/Valkey源码对比</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第26章 Memcached vs Redis/Valkey源码对比</h1>
 
         <p>大家好，我是你们的讲师。走到第26章，我们已经深入剖析了 Memcached 源码的每一个核心模块。如果你从第1章一路跟下来，现在应该对 slab allocator、LRU 三级队列、渐进式 rehash、libevent 事件模型这些概念如数家珍了。但一个很自然的问题会浮现在脑海中：同样做缓存，Redis 的源码是怎么处理这些问题的？它们的差异到底在哪？</p>
@@ -62,6 +79,65 @@
         <div class="highlight">
             <strong>关键洞察：</strong>两种架构都是针对各自的 workload 优化的。Memcached 面向大 value、高并发、内存敏感的场景；Redis 面向小 value、丰富数据结构、持久化场景。不是谁比谁先进，而是谁更适配谁的业务。
         </div>
+
+        <figure class="diagram" id="fig-thread">
+            <div class="figure-controls">
+                <button type="button" id="thToggle">切换到 Redis 模型</button>
+            </div>
+            <p class="diagram-note" id="thNote">当前：Memcached —— 主线程 accept，多个 worker 各自一个 event_base。</p>
+            <svg id="thSvg" viewBox="0 0 760 300" role="img" aria-labelledby="thTitle thDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="thTitle">Memcached 与 Redis 的线程模型对比</title>
+                <desc id="thDesc">Memcached 是一个主线程 accept 加多个 worker 各自运行独立 event_base；Redis 经典模型是单个线程执行命令，多个 I/O 线程只负责读写。</desc>
+                <defs><marker id="thArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">线程模型：两种不同的并行策略</text>
+                <g id="gMC">
+                    <rect x="280" y="44" width="200" height="50" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+                    <text x="380" y="66" font-size="12" font-weight="700" fill="#1e3a8a" text-anchor="middle">主线程：accept 连接</text>
+                    <text x="380" y="84" font-size="10" fill="#1e40af" text-anchor="middle">dispatch_conn_new + 管道唤醒</text>
+                    <rect x="60" y="150" width="180" height="110" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                    <rect x="290" y="150" width="180" height="110" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                    <rect x="520" y="150" width="180" height="110" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                    <g font-size="12" fill="#0f172a" text-anchor="middle"><text x="150" y="176">Worker 0</text><text x="380" y="176">Worker 1</text><text x="610" y="176">Worker 2</text></g>
+                    <g font-size="10" fill="#475569" text-anchor="middle"><text x="150" y="200">event_base</text><text x="380" y="200">event_base</text><text x="610" y="200">event_base</text><text x="150" y="222">独立 epoll</text><text x="380" y="222">独立 epoll</text><text x="610" y="222">独立 epoll</text><text x="150" y="244">连接绑定</text><text x="380" y="244">连接绑定</text><text x="610" y="244">连接绑定</text></g>
+                    <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#thArrow)"><line x1="320" y1="94" x2="170" y2="146"/><line x1="380" y1="94" x2="380" y2="146"/><line x1="440" y1="94" x2="590" y2="146"/></g>
+                </g>
+                <g id="gRD" style="display:none">
+                    <rect x="60" y="120" width="180" height="60" rx="10" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+                    <rect x="60" y="200" width="180" height="60" rx="10" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+                    <text x="150" y="154" font-size="11" fill="#854d0e" text-anchor="middle">I/O 线程：read</text>
+                    <text x="150" y="234" font-size="11" fill="#854d0e" text-anchor="middle">I/O 线程：write</text>
+                    <rect x="400" y="120" width="280" height="140" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+                    <text x="540" y="158" font-size="12" font-weight="700" fill="#14532d" text-anchor="middle">单线程命令执行</text>
+                    <text x="540" y="182" font-size="10" fill="#166534" text-anchor="middle">epoll 事件循环</text>
+                    <text x="540" y="202" font-size="10" fill="#166534" text-anchor="middle">解码 → 执行 → 编码</text>
+                    <text x="540" y="222" font-size="10" fill="#166534" text-anchor="middle">无锁、无竞争</text>
+                    <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#thArrow)"><line x1="240" y1="150" x2="396" y2="180"/><line x1="396" y1="200" x2="240" y2="230"/></g>
+                    <text x="330" y="110" font-size="10" fill="#475569" text-anchor="middle">命令</text>
+                    <text x="330" y="262" font-size="10" fill="#475569" text-anchor="middle">结果</text>
+                </g>
+            </svg>
+            <figcaption><strong>图 26-1　Memcached 与 Redis 的线程模型对比（概念示意）。</strong>Memcached（默认）是主线程 accept + 多 worker，每个 worker 拥有独立的 <code>event_base</code> 与连接；Redis 经典模型是单线程执行命令，Redis 6 的多线程 I/O 只用额外线程做 <code>read/write</code>，命令仍在单线程里跑。按钮在两种模型间切换。图中线程数为示意。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('thSvg');
+                if (!svg) { return; }
+                var mc = document.getElementById('gMC');
+                var rd = document.getElementById('gRD');
+                var btn = document.getElementById('thToggle');
+                var note = document.getElementById('thNote');
+                var showRedis = false;
+                function render() {
+                    mc.style.display = showRedis ? 'none' : '';
+                    rd.style.display = showRedis ? '' : 'none';
+                    btn.textContent = showRedis ? '切换到 Memcached 模型' : '切换到 Redis 模型';
+                    note.textContent = showRedis ? '当前：Redis —— 单线程执行命令，额外 I/O 线程只负责 read/write。' : '当前：Memcached —— 主线程 accept，多个 worker 各自一个 event_base。';
+                }
+                btn.addEventListener('click', function () { showRedis = !showRedis; render(); });
+                render();
+            })();
+        </script>
 
         <h2>内存管理：malloc vs slab allocator</h2>
 
@@ -103,6 +179,37 @@ static void *slab_alloc_chunk(slabclass_t *p, const size_t size) {
 }</code></pre>
 
         <p>看到差异了吗？Redis 的分配逻辑只有 5 行有效代码，Memcached 则维护了一套复杂的预分配和回收体系。前者的简洁来自对通用分配器的信任，后者的复杂来自对确定性和可控性的追求。</p>
+
+        <figure class="diagram" id="fig-frag">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="fgTitle fgDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="fgTitle">Slab 固定 chunk 的内部碎片与通用分配器的外部碎片</title>
+                <desc id="fgDesc">Memcached 的 slab 把内存切成固定大小的 chunk，小 value 会浪费 chunk 内剩余空间（内部碎片）；通用分配器按需变长分配，可用空间会被小块空隔切割（外部碎片）。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">两种碎片：固定的内部浪费 vs 变长的外部空隙</text>
+                <text x="195" y="60" font-size="12" font-weight="700" fill="#1d4ed8" text-anchor="middle">Memcached：固定 chunk（内部碎片）</text>
+                <rect x="50" y="76" width="150" height="60" fill="#f8fafc" stroke="#2563eb" stroke-width="2"/>
+                <rect x="50" y="76" width="59" height="60" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.6"/>
+                <rect x="109" y="76" width="91" height="60" fill="#fee2e2" stroke="#ef4444" stroke-width="1.6"/>
+                <text x="79" y="112" font-size="10" fill="#1e3a8a" text-anchor="middle">100B</text>
+                <text x="154" y="106" font-size="10" fill="#991b1b" text-anchor="middle">浪费 156B</text>
+                <text x="154" y="120" font-size="10" fill="#991b1b" text-anchor="middle">（不可他用）</text>
+                <text x="25" y="106" font-size="10" fill="#64748b">chunk 256B</text>
+                <text x="125" y="170" font-size="11" fill="#475569" text-anchor="middle">固定切分 → 无外部碎片；</text>
+                <text x="125" y="188" font-size="11" fill="#475569" text-anchor="middle">但小对象会浪费 chunk 内空间。</text>
+                <line x1="390" y1="40" x2="390" y2="210" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <text x="565" y="60" font-size="12" font-weight="700" fill="#166534" text-anchor="middle">Redis：变长分配（外部碎片）</text>
+                <line x1="420" y1="140" x2="720" y2="140" stroke="#94a3b8" stroke-width="2"/>
+                <g fill="#dcfce7" stroke="#16a34a" stroke-width="1.6">
+                    <rect x="420" y="100" width="60" height="40"/><rect x="520" y="100" width="90" height="40"/><rect x="650" y="100" width="40" height="40"/>
+                </g>
+                <g font-size="10" fill="#14532d" text-anchor="middle"><text x="450" y="125">obj</text><text x="565" y="125">obj</text><text x="670" y="125">obj</text></g>
+                <g fill="#fee2e2"><rect x="480" y="100" width="40" height="40"/><rect x="610" y="100" width="40" height="40"/></g>
+                <text x="500" y="92" font-size="10" fill="#991b1b" text-anchor="middle">空隙</text>
+                <text x="630" y="92" font-size="10" fill="#991b1b" text-anchor="middle">空隙</text>
+                <text x="570" y="170" font-size="11" fill="#475569" text-anchor="middle">按需分配 → 无内部碎片；</text>
+                <text x="570" y="188" font-size="11" fill="#475569" text-anchor="middle">但释放后留下的空隙可能无法利用。</text>
+            </svg>
+            <figcaption><strong>图 26-2　两种内存碎片（教学示意）。</strong>Memcached 的 slab 把内存预先切成固定大小 chunk：小对象在 chunk 内浪费（内部碎片），但不会产生外部碎片，分配路径确定；Redis 用 jemalloc 按需变长分配：对象本身不浪费，但释放后留下的空隙可能因不够下一个分配而闲置（外部碎片，由分配器整理）。图中 256B/100B 为便于说明的取值，非固定示例。</figcaption>
+        </figure>
 
         <h2>数据结构：redisObject vs item</h2>
 
@@ -359,7 +466,7 @@ typedef struct _stritem {
             <a href="index.html">📖 返回目录</a>
             <a href="27.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
