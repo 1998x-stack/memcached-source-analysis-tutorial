@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第21章 Meta Protocol：新一代协议</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第21章 Meta Protocol：新一代协议</h1>
 
         <p>大家好，我是你们的讲师。如果你跟着课程一路看下来，应该注意到了 ASCII 协议和二进制协议各自的问题：ASCII 带宽浪费、解析慢；二进制协议扩展性差、opcode 爆炸。那么有没有一种协议既能保持 ASCII 的灵活性，又能达到二进制的性能？答案是 Meta Protocol——Memcached 1.6 中引入的新一代协议。</p>
@@ -95,6 +112,68 @@
 </code></pre>
 
         <p>每个标志都是单个字符，可以自由组合。例如 <code>mg mykey v k</code> 表示"读取 mykey，返回 value 和 key"。这种紧凑的编码方式比二进制协议的固定 header 更灵活，因为在 Meta Protocol 中，标志的数量是可以扩展的——只需在服务端解析新的标志字符即可。</p>
+
+        <figure class="diagram" id="fig-flags">
+            <div class="figure-controls" id="flagBtns">
+                <button type="button" data-flag="v">v 返回值</button>
+                <button type="button" data-flag="k">k 返回 key</button>
+                <button type="button" data-flag="h">h 返回 hash</button>
+                <button type="button" data-flag="T120">T120 重置 TTL</button>
+                <button type="button" data-flag="s">s 静默</button>
+                <button type="button" data-flag="q">q 快速失败</button>
+            </div>
+            <p class="diagram-note" id="flagNote">点击上方按钮开关标志，命令会随之组合。</p>
+            <svg id="flagSvg" viewBox="0 0 760 220" role="img" aria-labelledby="flagTitle flagDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="flagTitle">Meta Protocol 的模式标志组合</title>
+                <desc id="flagDesc">一个 mg 命令由命令词、key 和若干单字符模式标志组成，标志可自由组合以微调行为，无需新的 opcode。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">mg（meta get）：命令 + 模式标志</text>
+                <rect x="40" y="46" width="680" height="50" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.6"/>
+                <text id="cmdOut" x="60" y="78" font-size="15" font-family="monospace" fill="#0f172a">mg mykey v</text>
+                <rect x="40" y="116" width="680" height="80" rx="10" fill="#eef4ff" stroke="#c7d8f5" stroke-width="1.6"/>
+                <text x="60" y="140" font-size="11" fill="#1e3a8a" font-weight="700">组合后的行为</text>
+                <text id="effOut" x="60" y="162" font-size="11" fill="#1e40af">返回 value。</text>
+                <text x="60" y="184" font-size="11" fill="#64748b">标志位与 opcode 无关：新增行为只需解析新标志字符。</text>
+            </svg>
+            <figcaption><strong>图 21-1　命令与模式标志的组合（机制示意）。</strong>Meta Protocol 把“命令 + 单字符标志”作为基本模型：<code>mg</code> 是 get，<code>v/k/h/T/s/q</code> 等标志微调其行为，因此不再需要为静默变体或 GET+更新 TTL 单独定义 opcode。图中标志集合依据源码中 meta 命令支持的常见标志整理，按钮仅用于演示组合效果。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('flagSvg');
+                if (!svg) { return; }
+                var cmdOut = document.getElementById('cmdOut');
+                var effOut = document.getElementById('effOut');
+                var note = document.getElementById('flagNote');
+                var desc = {
+                    v: '返回 value 数据。',
+                    k: '返回 key（确认操作的是哪个 key）。',
+                    h: '返回 key 的 hash 值。',
+                    T120: '把过期时间重置为 120 秒（相当于 TOUCH）。',
+                    s: '静默模式：不返回响应（等价 noreply）。',
+                    q: '快速失败：key 不存在时立即返回，不触发 LRU 维护。'
+                };
+                var order = ['v', 'k', 'h', 'T120', 's', 'q'];
+                var active = ['v'];
+                function render() {
+                    var flags = order.filter(function (f) { return active.indexOf(f) >= 0; });
+                    cmdOut.textContent = 'mg mykey ' + flags.join(' ');
+                    effOut.textContent = flags.length ? flags.map(function (f) { return desc[f]; }).join(' ') : '无标志：只做最少工作。';
+                    note.textContent = '当前命令：mg mykey ' + flags.join(' ');
+                    document.querySelectorAll('#flagBtns button').forEach(function (b) {
+                        b.style.background = active.indexOf(b.dataset.flag) >= 0 ? '#2563eb' : '#eef4ff';
+                        b.style.color = active.indexOf(b.dataset.flag) >= 0 ? '#fff' : '#1e40af';
+                    });
+                }
+                document.querySelectorAll('#flagBtns button').forEach(function (b) {
+                    b.addEventListener('click', function () {
+                        var f = b.dataset.flag, i = active.indexOf(f);
+                        if (i >= 0) { active.splice(i, 1); } else { active.push(f); }
+                        render();
+                    });
+                });
+                render();
+            })();
+        </script>
 
         <h2>模式标志（M）详解</h2>
 
@@ -215,6 +294,36 @@ item *item_get(const char *key, const size_t nkey, conn *c,
         <div class="tip">
             <strong>SWR 的最佳实践：</strong>我曾在 CDN 场景中使用 SWR 来缓存图片的缩略图元数据。常规 TTL 设为 1 小时，stale TTL 设为 24 小时。当缩略图生成服务宕机时，CDN 仍然可以提供"略微过时"的缩略图，而不是直接返回 404。这大幅提高了系统的可用性。唯一需要注意的是：stale 窗口不要太长，否则数据会越来越陈旧，最终影响用户体验。
         </div>
+
+        <figure class="diagram" id="fig-swr">
+            <svg viewBox="0 0 760 240" role="img" aria-labelledby="swrTitle swrDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="swrTitle">stale-while-revalidate 的时间窗口</title>
+                <desc id="swrDesc">数据写入后，正常 TTL 时间内为新鲜数据；超过正常 TTL 但在 stale 窗口内仍可返回旧数据并标记 stale；超过 stale 窗口则返回 miss。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">stale-while-revalidate：用“旧数据”换可用性</text>
+                <rect x="80" y="70" width="107" height="52" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+                <rect x="187" y="70" width="427" height="52" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+                <rect x="614" y="70" width="106" height="52" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+                <g font-size="11" text-anchor="middle">
+                    <text x="133" y="101" fill="#14532d">新鲜</text>
+                    <text x="400" y="93" fill="#854d0e">stale 窗口（仍可返回旧数据，标记 stale）</text>
+                    <text x="400" y="110" fill="#a16207" font-size="10">客户端看到标记后可异步刷新</text>
+                    <text x="667" y="101" fill="#991b1b">已过期</text>
+                </g>
+                <line x1="80" y1="140" x2="720" y2="140" stroke="#94a3b8" stroke-width="2"/>
+                <g stroke="#64748b" stroke-width="1.4">
+                    <line x1="80" y1="134" x2="80" y2="146"/><line x1="187" y1="134" x2="187" y2="146"/><line x1="614" y1="134" x2="614" y2="146"/><line x1="720" y1="134" x2="720" y2="146"/>
+                </g>
+                <g font-size="10" fill="#334155">
+                    <text x="80" y="162">t=0</text><text x="187" y="162" text-anchor="middle">T（如 60s）</text><text x="614" y="162" text-anchor="middle">T+W（如 300s）</text>
+                </g>
+                <g font-size="11" fill="#334155">
+                    <text x="80" y="192">命中：直接返回数据，不标记。</text>
+                    <text x="80" y="212">stale：返回旧数据 + stale 标记，不触发 miss。</text>
+                    <text x="80" y="232">过期：返回 miss，客户端重新计算并写入。</text>
+                </g>
+            </svg>
+            <figcaption><strong>图 21-2　stale-while-revalidate 的三个时间区段（机制示意）。</strong>写入时用 <code>T</code> 设正常 TTL、<code>W</code> 设 stale 窗口：在 T 内正常命中；在 T 到 T+W 之间仍返回旧数据并标记 stale，客户端可异步刷新；超过 T+W 才真正 miss。图中 60s / 300s 为教学取值（与源码示例一致），实际值由业务设定。</figcaption>
+        </figure>
 
         <h2>客户端竞态条件保护：win flag + CAS token</h2>
 
@@ -348,7 +457,7 @@ item *item_get(const char *key, const size_t nkey, conn *c,
             <a href="index.html">📖 返回目录</a>
             <a href="22.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
