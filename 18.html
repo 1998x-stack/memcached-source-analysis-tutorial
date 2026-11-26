@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第18章 并发控制：锁策略与无锁设计</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第18章 并发控制：锁策略与无锁设计</h1>
 
         <p>大家好，我是你们的讲师。前面三章我们一直在强调"每个 worker 线程拥有独立的 event_base"、"连接一旦分配就绑定在一个线程上"——这些设计都是为了<strong>减少锁</strong>。但减少不等于消除。在多线程模型中，仍然有一些全局资源需要被多个线程访问：哈希表、LRU 链表、slab 分配器、统计数据……这些资源必须用锁来保护。</p>
@@ -169,6 +186,77 @@ item *do_item_get(const char *key, const size_t nkey, const uint32_t hv) {
 }</code></pre>
 
         <p>当一个线程在 get key_A（hash=0x1234）时，它只锁住 <code>item_lock[0x1234 & 0xFFFF]</code>。另一个线程同时 get key_B（hash=0x5678），它锁住的是 <code>item_lock[0x5678 & 0xFFFF]</code>——只要 0x1234 和 0x5678 的低 16 位不同，这两个操作就<strong>完全并行</strong>，没有任何锁竞争。</p>
+
+        <figure class="diagram" id="fig-seglock">
+            <div class="figure-controls">
+                <button type="button" id="segNext">下一组 key</button>
+                <button type="button" id="segReset">重置</button>
+            </div>
+            <p class="diagram-note" id="segNote">第 1 组：两个 key 的低位不同，落在不同分段锁上，可完全并行。</p>
+            <svg id="segSvg" viewBox="0 0 760 250" role="img" aria-labelledby="segTitle segDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="segTitle">哈希值经过 mask 映射到分段锁</title>
+                <desc id="segDesc">哈希值 h 通过 h 与锁数量减一按位与，定位到 item_lock 数组中的一把锁；不同 key 可能落在同一把锁上产生竞争，落在不同锁上则互不影响。</desc>
+                <defs><marker id="segArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">hash2lock(h) = h &amp; (N − 1)，N = 分段锁数量</text>
+                <rect x="40" y="42" width="280" height="40" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.8"/>
+                <rect x="400" y="42" width="280" height="40" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.8"/>
+                <text id="segKeyA" x="180" y="67" font-size="12" fill="#1e3a8a" text-anchor="middle">key A  hash=0x12</text>
+                <text id="segKeyB" x="540" y="67" font-size="12" fill="#1e3a8a" text-anchor="middle">key B  hash=0x56</text>
+                <g stroke-width="1.6">
+                    <rect id="l0" x="28" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l1" x="116" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l2" x="204" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l3" x="292" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l4" x="380" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l5" x="468" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l6" x="556" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="l7" x="644" y="130" width="72" height="56" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="10" fill="#334155" text-anchor="middle">
+                    <text x="64" y="162">lock[0]</text><text x="152" y="162">lock[1]</text><text x="240" y="162">lock[2]</text><text x="328" y="162">lock[3]</text><text x="416" y="162">lock[4]</text><text x="504" y="162">lock[5]</text><text x="592" y="162">lock[6]</text><text x="680" y="162">lock[7]</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#segArrow)">
+                    <line id="segLineA" x1="180" y1="84" x2="240" y2="126"/>
+                    <line id="segLineB" x1="540" y1="84" x2="592" y2="126"/>
+                </g>
+                <text x="380" y="222" font-size="11" fill="#334155" text-anchor="middle">N 把锁均分哈希表：两个 key 低位相同才竞争，否则完全并行。</text>
+            </svg>
+            <figcaption><strong>图 18-1　哈希值到分段锁的映射（机制示意）。</strong>Memcached 用 <code>hash2lock(h) = h &amp; (item_lock_count − 1)</code> 把 key 的哈希值定位到 <code>item_lock[]</code> 中的一把。图中简化为 8 把锁以便展示；默认 <code>item_lock_hashpower = 16</code>，即 65536 把锁，两随机 key 撞同一把锁的概率约为 1/65536。按钮在两组示例 key 间切换，展示“落不同锁（并行）/ 落同一锁（竞争）”两种情况，哈希值为教学取值。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('segSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('segNote');
+                var pairs = [
+                    { a: '0x12', b: '0x56', la: 2, lb: 6, msg: '第 1 组：两个 key 的低位不同，落在不同分段锁上，可完全并行。' },
+                    { a: '0xAB', b: '0x3B', la: 3, lb: 3, msg: '第 2 组：两个 key 的低 3 位相同，落在同一把锁上，会产生竞争。' }
+                ];
+                var idx = 0;
+                function lockX(i) { return 28 + i * 88 + 36; }
+                function render() {
+                    var p = pairs[idx];
+                    for (var i = 0; i < 8; i++) {
+                        document.getElementById('l' + i).setAttribute('fill', '#f1f5f9');
+                        document.getElementById('l' + i).setAttribute('stroke', '#94a3b8');
+                    }
+                    [p.la, p.lb].forEach(function (locked, n) {
+                        var el = document.getElementById('l' + locked);
+                        el.setAttribute('fill', n === 0 ? '#dcfce7' : '#fee2e2');
+                        el.setAttribute('stroke', n === 0 ? '#16a34a' : '#ef4444');
+                    });
+                    document.getElementById('segKeyA').textContent = 'key A  hash=' + p.a + ' → lock[' + p.la + ']';
+                    document.getElementById('segKeyB').textContent = 'key B  hash=' + p.b + ' → lock[' + p.lb + ']';
+                    document.getElementById('segLineA').setAttribute('x2', lockX(p.la));
+                    document.getElementById('segLineB').setAttribute('x2', lockX(p.lb));
+                    note.textContent = p.msg;
+                }
+                document.getElementById('segNext').addEventListener('click', function () { idx = (idx + 1) % pairs.length; render(); });
+                document.getElementById('segReset').addEventListener('click', function () { idx = 0; render(); });
+                render();
+            })();
+        </script>
 
         <div class="tip">
             <strong>分段锁的数学原理：</strong>如果分段锁数量为 N，每个锁的预期竞争程度是全局锁的 1/N。但更重要的是，在 Memcached 的 65536 把锁下，两个随机 key 冲突的概率约为 1/65536——这在实际生产中可以忽略不计。分段锁是"用空间换并行度"的经典案例：多用了 65536 个 mutex 的内存（约 2MB），换来了接近无锁的哈希表并发访问性能。
@@ -297,6 +385,44 @@ void *slabs_alloc(size_t size, unsigned int id, ...) {
             <li><strong>异步也解决不了的尽量短</strong>：slab_lock 的临界区只有几条指令。</li>
         </ul>
 
+        <figure class="diagram" id="fig-lockperf">
+            <svg viewBox="0 0 760 270" role="img" aria-labelledby="lpTitle lpDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="lpTitle">全局大锁与分段锁下 8 个线程的执行时间线</title>
+                <desc id="lpDesc">左侧全局大锁下 8 个线程的操作首尾相接、串行执行，总耗时长；右侧分段锁下 8 个线程的操作同时开始、并行执行，总耗时短。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">同一批操作，两种锁粒度的时间线（教学示意）</text>
+                <text x="200" y="52" font-size="12" font-weight="700" fill="#b91c1c" text-anchor="middle">全局大锁：串行</text>
+                <g stroke="#64748b" stroke-width="1">
+                    <line x1="60" y1="60" x2="60" y2="240"/> 
+                </g>
+                <g fill="#fee2e2" stroke="#ef4444" stroke-width="1.4">
+                    <rect x="60" y="66" width="120" height="16" rx="3"/>
+                    <rect x="100" y="88" width="120" height="16" rx="3"/>
+                    <rect x="140" y="110" width="120" height="16" rx="3"/>
+                    <rect x="180" y="132" width="120" height="16" rx="3"/>
+                    <rect x="220" y="154" width="120" height="16" rx="3"/>
+                    <rect x="260" y="176" width="120" height="16" rx="3"/>
+                    <rect x="300" y="198" width="120" height="16" rx="3"/>
+                    <rect x="340" y="220" width="120" height="16" rx="3"/>
+                </g>
+                <text x="200" y="258" font-size="11" fill="#b91c1c" text-anchor="middle">总 ≈ 8 × 单次临界区，7 个线程在等</text>
+                <line x1="380" y1="40" x2="380" y2="250" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <text x="570" y="52" font-size="12" font-weight="700" fill="#166534" text-anchor="middle">分段锁：并行</text>
+                <g stroke="#16a34a" stroke-width="1"><line x1="420" y1="60" x2="420" y2="240"/></g>
+                <g fill="#dcfce7" stroke="#16a34a" stroke-width="1.4">
+                    <rect x="420" y="66" width="120" height="16" rx="3"/>
+                    <rect x="420" y="88" width="120" height="16" rx="3"/>
+                    <rect x="420" y="110" width="120" height="16" rx="3"/>
+                    <rect x="420" y="132" width="120" height="16" rx="3"/>
+                    <rect x="420" y="154" width="120" height="16" rx="3"/>
+                    <rect x="420" y="176" width="120" height="16" rx="3"/>
+                    <rect x="420" y="198" width="120" height="16" rx="3"/>
+                    <rect x="420" y="220" width="120" height="16" rx="3"/>
+                </g>
+                <text x="570" y="258" font-size="11" fill="#166534" text-anchor="middle">总 ≈ 单次临界区，8 个线程同时工作</text>
+            </svg>
+            <figcaption><strong>图 18-2　锁粒度对并行度的影响（教学示意）。</strong>左图抽象地展示：若哈希表、LRU、slab 共用一把全局锁，8 个线程的临界区被迫首尾相接，总耗时近似为 8 倍且 7 个线程空转。右图是 Memcached 的实际策略：<code>item_lock</code> 分段后，不同 key 的操作并行推进。条形宽度与时间轴均为示意，不代表具体基准测试数值。</figcaption>
+        </figure>
+
         <h2>死锁案例分析：item_lock 和 cache_lock</h2>
 
         <p>说完了锁的设计，我们来看一个容易踩的坑——<strong>锁的顺序</strong>。在 do_item_link（将 item 插入哈希表和 LRU）时，涉及两把锁：</p>
@@ -375,7 +501,7 @@ memcached -o hashpower=20</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="19.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
