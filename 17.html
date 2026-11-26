@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第17章 多线程模型：Master-Worker架构</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第17章 多线程模型：Master-Worker架构</h1>
 
         <p>大家好，我是你们的讲师。上一章我们跟踪了一个 set 请求在连接状态机中的完整旅程，其中有一步非常关键：<code>dispatch_conn_new()</code>——把新连接交给 worker 线程。这一步背后隐藏着 Memcached 多线程模型中<strong>最精妙的设计</strong>：如何使用管道（pipe）+ libevent 实现跨线程唤醒，如何在无锁的情况下分发连接，以及为什么这种设计比共享队列更加高效。</p>
@@ -76,6 +93,70 @@ typedef struct {
         <div class="tip">
             <strong>理解要点：</strong>每个 worker 线程都是一个"迷你事件驱动服务器"——它有自己独立的 event_base、独立的连接队列、独立的事件循环。线程之间除了通过管道发送一个字节的信号外没有任何共享资源。这种"完全隔离"的设计是 Memcached 高性能的基础。
         </div>
+
+        <figure class="diagram" id="fig-mw">
+            <div class="figure-controls">
+                <button type="button" id="mwDispatch">分发一条新连接</button>
+                <button type="button" id="mwReset">重置</button>
+            </div>
+            <p class="diagram-note" id="mwNote">点击按钮模拟主线程按 Round-Robin 把新连接递给下一个 worker。</p>
+            <svg id="mwSvg" viewBox="0 0 760 330" role="img" aria-labelledby="mwTitle mwDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="mwTitle">Master-Worker 架构与管道唤醒</title>
+                <desc id="mwDesc">主线程负责 accept 新连接，按 Round-Robin 将连接放入某个 worker 的连接队列，并向其管道写一个字节唤醒它；每个 worker 拥有独立的 event_base、连接队列和管道。</desc>
+                <defs><marker id="mwArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <rect x="270" y="26" width="220" height="52" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+                <text x="380" y="50" font-size="13" font-weight="700" fill="#1e3a8a" text-anchor="middle">主线程 Master</text>
+                <text x="380" y="68" font-size="10" fill="#1e40af" text-anchor="middle">accept 新连接 → dispatch_conn_new</text>
+                <g stroke-width="1.6">
+                    <rect id="mw0" x="30" y="170" width="210" height="120" rx="12" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="mw1" x="275" y="170" width="210" height="120" rx="12" fill="#f1f5f9" stroke="#94a3b8"/>
+                    <rect id="mw2" x="520" y="170" width="210" height="120" rx="12" fill="#f1f5f9" stroke="#94a3b8"/>
+                </g>
+                <g font-size="12" fill="#0f172a" text-anchor="middle">
+                    <text x="135" y="196">Worker 0</text><text x="380" y="196">Worker 1</text><text x="625" y="196">Worker 2</text>
+                </g>
+                <g font-size="10" fill="#475569" text-anchor="middle">
+                    <text x="135" y="220">独立 event_base</text><text x="380" y="220">独立 event_base</text><text x="625" y="220">独立 event_base</text>
+                    <text x="135" y="240">CQ 连接队列</text><text x="380" y="240">CQ 连接队列</text><text x="625" y="240">CQ 连接队列</text>
+                    <text x="135" y="262" fill="#1d4ed8">notify pipe（读端监听）</text><text x="380" y="262" fill="#1d4ed8">notify pipe（读端监听）</text><text x="625" y="262" fill="#1d4ed8">notify pipe（读端监听）</text>
+                </g>
+                <g stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#mwArrow)">
+                    <line x1="330" y1="78" x2="150" y2="166"/>
+                    <line x1="380" y1="78" x2="380" y2="166"/>
+                    <line x1="430" y1="78" x2="610" y2="166"/>
+                </g>
+                <text x="226" y="118" font-size="10" fill="#475569">write(pipe,1)</text>
+                <text x="392" y="118" font-size="10" fill="#475569">write(pipe,1)</text>
+                <text x="548" y="118" font-size="10" fill="#475569">write(pipe,1)</text>
+            </svg>
+            <figcaption><strong>图 17-1　Master-Worker 架构与管道唤醒（机制示意）。</strong>主线程只负责 accept 与分发；每个 worker 拥有独立的 <code>event_base</code>、<code>conn_queue</code> 和一对 pipe。分发时先按 Round-Robin 选线程、把连接推入其队列，再向管道写 1 字节唤醒；worker 的 <code>event_base_loop</code> 把网络 I/O 与线程通知统一在同一事件循环里。图中 3 个 worker、连线方向为示意，实际线程数由 <code>-t</code> 决定。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('mwSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('mwNote');
+                var next = 0;
+                function render() {
+                    for (var i = 0; i < 3; i++) {
+                        document.getElementById('mw' + i).setAttribute('fill', '#f1f5f9');
+                        document.getElementById('mw' + i).setAttribute('stroke', '#94a3b8');
+                        document.getElementById('mw' + i).setAttribute('stroke-width', '1.6');
+                    }
+                }
+                render();
+                document.getElementById('mwDispatch').addEventListener('click', function () {
+                    var t = next % 3;
+                    document.getElementById('mw' + t).setAttribute('fill', '#dcfce7');
+                    document.getElementById('mw' + t).setAttribute('stroke', '#16a34a');
+                    document.getElementById('mw' + t).setAttribute('stroke-width', '2.6');
+                    note.textContent = '第 ' + (next + 1) + ' 条连接 → worker ' + t + '：入队 CQ 并向它的 pipe 写 1 字节唤醒。';
+                    next++;
+                });
+                document.getElementById('mwReset').addEventListener('click', function () { next = 0; render(); note.textContent = '点击按钮模拟主线程按 Round-Robin 把新连接递给下一个 worker。'; });
+            })();
+        </script>
 
         <h2>主线程 accept + dispatch 完整流程</h2>
 
@@ -327,6 +408,43 @@ void thread_libevent_process(evutil_socket_t fd, short which, void *arg) {
 
         <p>Memcached 的设计哲学是：<strong>能避免的锁就避免，避免不了的就用分段锁</strong>。为每个 worker 线程分配独立的连接队列，本质上就是一种"分段"——把一把全局锁拆成了 N 把独立的锁，每把锁的竞争程度降为 1/N。</p>
 
+        <figure class="diagram" id="fig-queue">
+            <svg viewBox="0 0 760 250" role="img" aria-labelledby="qqTitle qqDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="qqTitle">共享队列与每线程独立队列的锁竞争对比</title>
+                <desc id="qqDesc">左侧共享队列方案中多个 worker 线程争抢同一把全局锁，竞争随线程数放大；右侧每线程独立队列把一把全局锁拆成 N 把独立锁，每把锁的竞争降为约 1/N。</desc>
+                <text x="180" y="32" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="middle">共享队列：一把全局锁</text>
+                <rect x="90" y="52" width="180" height="40" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+                <text x="180" y="77" font-size="12" fill="#991b1b" text-anchor="middle">task queue + 全局 lock</text>
+                <g fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6">
+                    <rect x="45" y="170" width="70" height="44" rx="8"/><rect x="145" y="170" width="70" height="44" rx="8"/><rect x="245" y="170" width="70" height="44" rx="8"/>
+                </g>
+                <g font-size="11" fill="#334155" text-anchor="middle"><text x="80" y="196">W1</text><text x="180" y="196">W2</text><text x="280" y="196">W3</text></g>
+                <g stroke="#ef4444" stroke-width="1.6" fill="none" marker-end="url(#queueArrow)">
+                    <line x1="80" y1="168" x2="140" y2="96"/><line x1="180" y1="168" x2="180" y2="96"/><line x1="280" y1="168" x2="220" y2="96"/>
+                </g>
+                <text x="180" y="236" font-size="11" fill="#b91c1c" text-anchor="middle">N 个线程争同一把锁，cache line 来回跳动</text>
+                <line x1="380" y1="30" x2="380" y2="240" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <text x="570" y="32" font-size="13" font-weight="700" fill="#166534" text-anchor="middle">每线程独立队列：分段锁</text>
+                <g fill="#dcfce7" stroke="#16a34a" stroke-width="2">
+                    <rect x="410" y="52" width="80" height="40" rx="8"/><rect x="530" y="52" width="80" height="40" rx="8"/><rect x="650" y="52" width="80" height="40" rx="8"/>
+                </g>
+                <g font-size="10" fill="#14532d" text-anchor="middle"><text x="450" y="77">CQ0 lock</text><text x="570" y="77">CQ1 lock</text><text x="690" y="77">CQ2 lock</text></g>
+                <g fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6">
+                    <rect x="410" y="170" width="80" height="44" rx="8"/><rect x="530" y="170" width="80" height="44" rx="8"/><rect x="650" y="170" width="80" height="44" rx="8"/>
+                </g>
+                <g font-size="11" fill="#334155" text-anchor="middle"><text x="450" y="196">W0</text><text x="570" y="196">W1</text><text x="690" y="196">W2</text></g>
+                <g stroke="#16a34a" stroke-width="1.6" fill="none" marker-end="url(#queueArrow2)">
+                    <line x1="450" y1="168" x2="450" y2="96"/><line x1="570" y1="168" x2="570" y2="96"/><line x1="690" y1="168" x2="690" y2="96"/>
+                </g>
+                <defs>
+                    <marker id="queueArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#ef4444"/></marker>
+                    <marker id="queueArrow2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#16a34a"/></marker>
+                </defs>
+                <text x="570" y="236" font-size="11" fill="#166534" text-anchor="middle">每线程一把锁，竞争降为约 1/N，且各自 cache 本地</text>
+            </svg>
+            <figcaption><strong>图 17-2　共享队列与分段队列的锁竞争对比（教学示意）。</strong>Memcached 为每个 worker 分配独立 CQ，相当于把一把全局锁拆成 N 把；结合 connection pinning，同一连接始终由同一线程处理，避免了跨核共享写与惊群。图中 W0–W2 与锁数量为示意，未包含实测扩展性数据。</figcaption>
+        </figure>
+
         <h2>踩坑：管道缓冲区满导致主线程阻塞</h2>
 
         <p>最后分享一个非常隐蔽的坑。在早期的 Memcached 版本中，有一个 bug：当大量新连接在极短时间内涌入时，主线程向某个 worker 线程的管道写信号时可能会<strong>阻塞</strong>。</p>
@@ -360,7 +478,7 @@ void thread_libevent_process(evutil_socket_t fd, short which, void *arg) {
             <a href="index.html">📖 返回目录</a>
             <a href="18.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
