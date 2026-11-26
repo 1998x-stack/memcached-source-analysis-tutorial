@@ -316,7 +316,7 @@ static void drive_machine(conn *c) {
     }
     break;</code></pre>
 
-        <p>注意 <code>c->rlbytes</code> 和 <code>c->rcurr</code> 的作用:它们记录着"还需要读多少字节"和"当前写到哪了"。这是实现“部分读取”的关键——TCP 是流式协议，一个包可能只带了 value 的一部分，下一次数据到达后继续从断点读起。</p>
+        <p>注意 <code>c->rlbytes</code> 和 <code>c->rcurr</code> 的作用：它们记录着"还需要读多少字节"和"当前写到哪了"。这是实现"部分读取"的关键——TCP 是流式协议，一个包可能只带了 value 的一部分，下一次数据到达后继续从断点读起。</p>
 
         <figure class="diagram" id="fig-nread">
             <svg viewBox="0 0 760 230" role="img" aria-labelledby="nreadTitle nreadDesc" xmlns="http://www.w3.org/2000/svg">
