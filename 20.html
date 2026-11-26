@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
     <title>第20章 二进制协议：proto_bin详解</title>
     <link rel="stylesheet" href="theme.css">
+    <style>
+        pre { overflow-x: auto; max-width: 100%; }
+        .main-content { min-width: 0; }
+        h1, h2, h3, h4 { overflow-wrap: break-word; word-break: break-word; }
+        table { width: 100%; }
+        th, td { overflow-wrap: break-word; word-break: break-word; }
+        figure.diagram { margin: 22px 0; padding: 16px 18px; background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 16px; overflow-x: auto; }
+        figure.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+        figure.diagram figcaption { margin-top: 10px; font-size: .9rem; color: #475569; line-height: 1.65; }
+        figure.diagram figcaption strong { color: #0f172a; }
+        .figure-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .1rem 0 .7rem; }
+        .figure-controls button { font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: #1e40af; background: #eef4ff; border: 1px solid #c7d8f5; border-radius: 30px; padding: .3rem 1rem; }
+        .figure-controls button:hover { background: #dbe8ff; }
+        .figure-controls button:focus-visible, a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+        .diagram-note { font-size: .85rem; color: #475569; min-height: 1.4em; }
+        @media (max-width: 768px) { .main-content { padding: 18px 14px; } }
+    </style>
 </head>
 <body>
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程章节导航">
         <h3>⚙️ 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 为什么要读Memcached源码</a></li>
@@ -41,8 +58,8 @@
             <li><a href="27.html">第27章 Memcached的未来与社区生态</a></li>
             <li><a href="28.html">第28章 综合项目：手写Mini-Memcached</a></li>
         </ul>
-    </div>
-    <div class="main-content">
+    </nav>
+    <main class="main-content">
         <h1>第20章 二进制协议：proto_bin详解</h1>
 
         <p>大家好，我是你们的讲师。上一章我们详细剖析了 ASCII 文本协议的实现，它直观、可调试，但也面临着解析效率低和带宽浪费的问题。2010 年左右，随着 Facebook 等公司大规模部署 Memcached，网络带宽和 CPU 解析开销成了实实在在的瓶颈。于是，Memcached 社区在 1.4.x 版本中正式引入了二进制协议（Binary Protocol），定义在 <code>proto_bin.c</code> 和 <code>protocol_binary.h</code> 中。</p>
@@ -79,6 +96,75 @@
         <div class="tip">
             <strong>大端序的细节：</strong>二进制协议中所有多字节字段都是大端序（network byte order）。这意味着 x86 机器上需要用 <code>ntohs()</code>/<code>ntohl()</code> 进行转换。这个选择是为了保证不同字节序的机器之间能够正确通信——虽然今天的服务器几乎全是 x86 小端，但设计之初要考虑通用性。
         </div>
+
+        <figure class="diagram" id="fig-header">
+            <div class="figure-controls">
+                <button type="button" id="hdrNext">下一字段</button>
+                <button type="button" id="hdrReset">重置</button>
+            </div>
+            <p class="diagram-note" id="hdrNote">magic (1B)：0x80 表示请求，0x81 表示响应。</p>
+            <svg id="hdrSvg" viewBox="0 0 760 240" role="img" aria-labelledby="hdrTitle hdrDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="hdrTitle">24 字节二进制协议头部的字段布局</title>
+                <desc id="hdrDesc">头部依次为 magic 1 字节、opcode 1 字节、keylen 2 字节、extlen 1 字节、datatype 1 字节、status 2 字节、bodylen 4 字节、opaque 4 字节、cas 8 字节，共 24 字节。</desc>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">protocol_binary_request_header：24 字节固定头部</text>
+                <g stroke="#2563eb" stroke-width="1.6">
+                    <rect id="h0" x="40" y="84" width="28" height="48" fill="#f1f5f9"/>
+                    <rect id="h1" x="68" y="84" width="28" height="48" fill="#f1f5f9"/>
+                    <rect id="h2" x="96" y="84" width="56" height="48" fill="#f1f5f9"/>
+                    <rect id="h3" x="152" y="84" width="28" height="48" fill="#f1f5f9"/>
+                    <rect id="h4" x="180" y="84" width="28" height="48" fill="#f1f5f9"/>
+                    <rect id="h5" x="208" y="84" width="56" height="48" fill="#f1f5f9"/>
+                    <rect id="h6" x="264" y="84" width="112" height="48" fill="#f1f5f9"/>
+                    <rect id="h7" x="376" y="84" width="112" height="48" fill="#f1f5f9"/>
+                    <rect id="h8" x="488" y="84" width="224" height="48" fill="#f1f5f9"/>
+                </g>
+                <g font-size="9" fill="#334155" text-anchor="middle">
+                    <text x="54" y="76">magic</text><text x="82" y="62">opcode</text><text x="124" y="76">keylen</text><text x="166" y="62">extlen</text><text x="194" y="76">datatype</text><text x="236" y="62">status</text><text x="320" y="76">bodylen</text><text x="432" y="62">opaque</text><text x="600" y="76">cas</text>
+                </g>
+                <g font-size="9" fill="#94a3b8" text-anchor="middle">
+                    <text x="54" y="150">0</text><text x="82" y="150">1</text><text x="124" y="150">3</text><text x="166" y="150">5</text><text x="194" y="150">6</text><text x="236" y="150">8</text><text x="320" y="150">12</text><text x="432" y="150">16</text><text x="600" y="150">20</text>
+                </g>
+                <text x="40" y="180" font-size="11" fill="#475569">上方为字段名，下方小字为字节偏移。宽窄按真实字节数等比绘制。</text>
+                <text x="40" y="204" font-size="11" fill="#475569">多字节字段统一使用大端序（network byte order）。</text>
+            </svg>
+            <figcaption><strong>图 20-1　二进制协议头部的字段布局（按源码结构绘制）。</strong>各字段宽度按 <code>protocol_binary_request_header</code> 的真实字节数等比绘制，合计 24 字节；偏移值为字段起始字节。所有多字节字段为大端序。点击按钮可逐字段查看含义。</figcaption>
+        </figure>
+
+        <script>
+            (function () {
+                var svg = document.getElementById('hdrSvg');
+                if (!svg) { return; }
+                var note = document.getElementById('hdrNote');
+                var fields = [
+                    ['h0', 'magic (1B)：0x80 表示请求，0x81 表示响应。'],
+                    ['h1', 'opcode (1B)：一个字节表达全部操作，如 0x00=GET。'],
+                    ['h2', 'keylen (2B, 大端)：key 长度，最大 65535。'],
+                    ['h3', 'extlen (1B)：extras 长度，如 SET 为 8 字节。'],
+                    ['h4', 'datatype (1B)：数据类型，当前固定 0x00。'],
+                    ['h5', 'status (2B)：响应状态码，请求时为 0。'],
+                    ['h6', 'bodylen (4B)：等于 keylen + extlen + valuelen。'],
+                    ['h7', 'opaque (4B)：请求-响应匹配标识，流水线靠它对应。'],
+                    ['h8', 'cas (8B)：CAS token，用于乐观并发控制。']
+                ];
+                var idx = -1;
+                function render() {
+                    for (var i = 0; i < fields.length; i++) {
+                        var el = document.getElementById(fields[i][0]);
+                        el.setAttribute('fill', '#f1f5f9');
+                        el.setAttribute('stroke-width', '1.6');
+                    }
+                    if (idx >= 0) {
+                        var cur = document.getElementById(fields[idx][0]);
+                        cur.setAttribute('fill', '#dbeafe');
+                        cur.setAttribute('stroke-width', '3');
+                    }
+                    note.textContent = idx < 0 ? 'magic (1B)：0x80 表示请求，0x81 表示响应。' : '第 ' + (idx + 1) + ' / 9 个字段：' + fields[idx][1];
+                }
+                document.getElementById('hdrNext').addEventListener('click', function () { idx = (idx + 1) % fields.length; render(); });
+                document.getElementById('hdrReset').addEventListener('click', function () { idx = -1; render(); });
+                render();
+            })();
+        </script>
 
         <h2>完整的 Opcode 一览表</h2>
 
@@ -401,6 +487,33 @@ static void process_bin_read(conn *c) {
 
         <p>每个 opcode 的处理最终都会落到和 ASCII 协议相同的底层操作上（<code>item_get</code>、<code>item_alloc</code>、<code>do_item_link</code> 等）。不同的是输入解析和输出序列化的方式——二进制协议用结构体操作代替了字符串格式化。</p>
 
+        <figure class="diagram" id="fig-detect">
+            <svg viewBox="0 0 760 270" role="img" aria-labelledby="detTitle detDesc" xmlns="http://www.w3.org/2000/svg">
+                <title id="detTitle">同一端口上的 ASCII 与二进制协议自动检测</title>
+                <desc id="detDesc">服务器读取连接的第一个字节：若为 0x80 则按二进制协议处理并进入 process_bin_read，否则按 ASCII 协议处理并进入 process_command。</desc>
+                <defs><marker id="detArrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#64748b"/></marker></defs>
+                <text x="16" y="26" font-size="14" font-weight="700" fill="#0f172a">同一个 11211 端口，两种协议共存</text>
+                <rect x="270" y="44" width="220" height="46" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.6"/>
+                <text x="380" y="66" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle">读入 connection 的首字节</text>
+                <text x="380" y="82" font-size="10" fill="#475569" text-anchor="middle">command[0]</text>
+                <polygon points="380,112 480,152 380,192 280,152" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+                <text x="380" y="148" font-size="12" fill="#854d0e" text-anchor="middle">首字节 == 0x80 ?</text>
+                <text x="380" y="166" font-size="10" fill="#a16207" text-anchor="middle">PROTOCOL_BINARY_REQ</text>
+                <line x1="380" y1="90" x2="380" y2="108" stroke="#64748b" stroke-width="1.8" marker-end="url(#detArrow)"/>
+                <rect x="40" y="216" width="300" height="44" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+                <text x="190" y="236" font-size="12" fill="#14532d" text-anchor="middle">binary_prot：读 24B header</text>
+                <text x="190" y="252" font-size="10" fill="#166534" text-anchor="middle">process_bin_read() → dispatch_bin_command()</text>
+                <rect x="420" y="216" width="300" height="44" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+                <text x="570" y="236" font-size="12" fill="#1e3a8a" text-anchor="middle">ascii_prot：按行解析</text>
+                <text x="570" y="252" font-size="10" fill="#1e40af" text-anchor="middle">tokenize → process_command()</text>
+                <line x1="300" y1="170" x2="190" y2="214" stroke="#16a34a" stroke-width="1.8" marker-end="url(#detArrow)"/>
+                <line x1="460" y1="170" x2="570" y2="214" stroke="#2563eb" stroke-width="1.8" marker-end="url(#detArrow)"/>
+                <text x="200" y="196" font-size="10" fill="#166534">是</text>
+                <text x="548" y="196" font-size="10" fill="#1e40af">否（字母开头）</text>
+            </svg>
+            <figcaption><strong>图 20-2　协议自动检测的分支（机制示意）。</strong>ASCII 命令均以字母开头，而二进制请求首字节固定为 <code>0x80</code>，因此服务端只需看首字节即可判定协议，无需额外握手。判定后连接分别进入二进制与 ASCII 两条独立的解析路径。图中分支条件对应源码中对 <code>PROTOCOL_BINARY_REQ</code> 的判断。</figcaption>
+        </figure>
+
         <h2>协议版本协商</h2>
 
         <p>Memcached 如何知道一个连接使用 ASCII 还是二进制协议？答案是——<strong>自动检测</strong>。</p>
@@ -444,7 +557,7 @@ if (magic == PROTOCOL_BINARY_REQ) {  // 0x80
             <a href="index.html">📖 返回目录</a>
             <a href="21.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
