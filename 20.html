@@ -367,7 +367,7 @@
 
         <h2>Binary vs ASCII 性能对比</h2>
 
-        <p>二进制协议在性能上的优势是显著的。根据 Memcached 官方社区的基准测试和我在生产环境中的实测数据：</p>
+        <p>二进制协议在性能上的优势是显著的。下面从机制上说明它为何比 ASCII 更紧凑、更快（下文的百分比与 QPS 为<em>教学示意</em>的预期量级，不是官方基准或本机实测）：</p>
 
         <ul>
             <li><strong>带宽节省约 30%：</strong>GET 操作在 ASCII 协议下需要传输 "VALUE &lt;key&gt; &lt;flags&gt; &lt;bytes&gt;\r\n&lt;data&gt;\r\nEND\r\n"——光是 "VALUE"、"END" 这些关键字就是几十个字节的开销。而二进制协议只需要 24 字节 header + 实际数据，没有冗余关键字</li>
@@ -376,7 +376,7 @@
         </ul>
 
         <div class="highlight">
-            <strong>实测数据：</strong>在我的一次对比测试中，使用二进制协议的 Memcached 客户端在 8 核服务器上处理 100 字节 value 的 GET 请求时，吞吐量比 ASCII 协议高出约 40%（110 万 QPS vs 78 万 QPS）。带宽消耗也显著降低，特别是在 value 较小的情况下，header 开销占比更大，优化效果更明显。
+            <strong>量级示意：</strong>在典型 8 核服务器、100 字节 value 的 GET 场景下，二进制协议相对 ASCII 的吞吐优势通常在几十个百分点量级（本节以约 40% 作为<em>教学示意</em>：110 万 vs 78 万 QPS）。带宽消耗也更低，尤其在 value 较小时 header 占比更大、优化更明显。具体数值随客户端、连接数与负载而异，请以自己环境的实测为准。
         </div>
 
         <h2>SASL 认证的实现</h2>
