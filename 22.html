@@ -313,9 +313,9 @@ static int extstore_flush_page(struct extstore *e, int page_id) {
             })();
         </script>
 
-        <h2>性能影响实测：RAM-only vs RAM+SSD</h2>
+        <h2>性能影响：RAM-only vs RAM+SSD（教学示意）</h2>
 
-        <p>extstore 不是银弹。它带来了容量优势，但代价是延迟的增加。我们来看一组对比实测数据：</p>
+        <p>extstore 不是银弹。它带来了容量优势，但代价是延迟的增加。下面用一组<strong>教学示意</strong>的量级对比说明权衡方向（数值为经验量级，非本机实测；实际取决于 SSD 类型、page 大小与冷热比）：</p>
 
         <table>
             <thead>
@@ -363,6 +363,8 @@ static int extstore_flush_page(struct extstore *e, int page_id) {
                 </tr>
             </tbody>
         </table>
+
+        <p class="diagram-note">上表为<em>教学示意</em>：数值用于说明“热数据在 RAM 延迟基本不变、冷数据回读 SSD 会显著抬升尾延迟”的趋势，并非官方基准或本机复现结果，具体数值随硬件与负载而异。</p>
 
         <p>从数据可以看到：对于热数据（命中 RAM），extstore 的延迟几乎没有增加。但对于需要从 SSD 读取的冷数据，P50 延迟从 50μs 跳到了 150μs——虽然仍然是微秒级别，但已经是内存访问的 3 倍了。P99 延迟更是到了 2ms，这是因为 SSD 读取在极端情况下会有 GC 停顿。</p>
 
