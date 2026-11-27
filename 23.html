@@ -363,9 +363,9 @@ end</code></pre>
             <figcaption><strong>图 23-2　proxy 的故障转移决策（机制示意）。</strong>路由选中后端后先判断其可用性：可用则正常转发；不可用则进入 Lua 的 <code>failover()</code> 回调，在其中可调用 <code>pool:next_server()</code> 取下一个节点或返回错误。由于 GET 幂等、SET 非幂等，生产实现常按命令类型区分重试策略。图为概念流程，非完整状态机。</figcaption>
         </figure>
 
-        <h2>Proxy 性能基准</h2>
+        <h2>Proxy 性能基准（教学示意）</h2>
 
-        <p>既然多了一层转发，proxy 模式必然有性能损耗。根据官方 benchmark 数据，proxy 模式 vs 直连模式的吞吐对比如下：</p>
+        <p>既然多了一层转发，proxy 模式必然有性能损耗。下面用一组<strong>教学示意</strong>的量级对比说明损耗方向（数值为预期量级，非官方基准或本机实测；实际取决于 Lua 逻辑复杂度、后端数与网络）：</p>
 
         <table>
             <thead>
@@ -404,7 +404,7 @@ end</code></pre>
             </tbody>
         </table>
 
-        <p>可以看到，proxy 模式大约有 15%-25% 的性能损耗。但如果你原本就在用 twemproxy 或 mcrouter 之类的独立代理，Memcached 内置 proxy 的性能会<strong>更高</strong>——因为减少了一次网络跳转和进程间通信的开销。</p>
+        <p>可以看到，proxy 模式大约有 15%-25% 的吞吐损耗（同样为<em>教学示意</em>的量级）。但如果你原本就在用 twemproxy 或 mcrouter 之类的独立代理，Memcached 内置 proxy 的性能会<strong>更高</strong>——因为减少了一次网络跳转和进程间通信的开销。</p>
 
         <div class="highlight">
             <strong>工程权衡：</strong>15%-25% 的吞吐损耗换来的是极大的运维简化——不需要单独部署和维护 proxy 集群，路由策略动态修改无需重启，故障转移逻辑可以按需定制。对于大多数业务场景来说，这笔交易是划算的。
