@@ -125,11 +125,12 @@
             </tbody>
         </table>
 
-        <p>下面是一组 benchmark 数据，展示不同参数组合下的性能差异：</p>
+        <p>下面用一组<strong>教学示意</strong>的输出展示不同参数组合下的趋势（数值为示例，用于说明“并非线程越多越好”，非固定基准结果；请以自己环境的实测为准）：</p>
 
         <pre><code># 测试环境：8 vCPU / 32GB RAM / SSD, Ubuntu 22.04
 # 测试工具：mcperf
 # 场景：100 字节 key + 200 字节 value，90% GET + 10% SET
+# 注意：以下 QPS/p99 为教学示意输出，仅展示趋势，不代表可复现的基准
 
 # 默认配置（4 线程）
 mcperf --servers=127.0.0.1:11211 --num-conns=10 --num-calls=1000000
@@ -196,7 +197,7 @@ def get_with_local_cache(key):
 #   - 设置合理的回源限流，防止数据库被打崩</code></pre>
 
         <div class="highlight">
-            <strong>经验数据：</strong>在我们的一次生产压测中，增加本地缓存后，Memcached 集群的 QPS 从 500 万降到了 80 万（热 key 请求被本地缓存吸收了），而业务方看到的延迟从 8ms 降到了 0.5ms。这是一个典型的"多花钱少办事"的反直觉案例——<strong>增加了一层缓存，总延迟反而大幅下降</strong>。
+            <strong>经验数据（教学示意）：</strong>在一次典型的生产压测（已作简化）中，增加本地缓存后，Memcached 集群的 QPS 从约 500 万降到约 80 万（热 key 请求被本地缓存吸收了），而业务方看到的延迟从约 8ms 降到约 0.5ms。这是一个典型的"多花钱少办事"的反直觉案例——<strong>增加了一层缓存，总延迟反而大幅下降</strong>。上述数值为量级示意，实际收益取决于热 key 占比与本地 TTL。
         </div>
 
                 <figure class="diagram" id="fig-hotkey">
