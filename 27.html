@@ -223,7 +223,7 @@
 
         <h3>DragonflyDB</h3>
 
-        <p>DragonflyDB 是一个用 C++20 实现的内存数据存储，目标是成为 <strong>Redis 的现代替代品</strong>。它的核心卖点是多线程架构——使用 <strong>shared-nothing 模型</strong>，每个线程拥有独立的分片数据，避免了全局锁竞争。在 8 核机器上，DragonflyDB 的 QPS 可以达到 Redis 的 10 倍以上。</p>
+        <p>DragonflyDB 是一个用 C++20 实现的内存数据存储，目标是成为 <strong>Redis 的现代替代品</strong>。它的核心卖点是多线程架构——使用 <strong>shared-nothing 模型</strong>，每个线程拥有独立的分片数据，避免了全局锁竞争。据其公开基准宣称，在 8 核机器上 DragonflyDB 的 QPS 可达 Redis 的 10 倍以上（上述为厂商公开数据，仅作教学引用，未经本课程独立复现）。</p>
 
         <p>DragonflyDB 兼容 RESP 协议，所以 Redis 客户端可以直接连接它。它也在兼容 Memcached 的 ASCII 协议（部分实现）。但 DragonflyDB 不是一个纯缓存——它更像一个"高性能数据存储"，功能集更接近 Redis。</p>
 
@@ -297,7 +297,7 @@
 
         <p>面对这么多新的"挑战者"，Memcached 还有什么理由存在？答案是：<strong>极致简单</strong>。</p>
 
-        <p>DragonflyDB 在 benchmark 中确实比 Redis 快，但它用 C++20 的复杂特性实现了一个庞大的系统——它的代码量是 Memcached 的 5 倍。Garnet 用 C# 实现，但需要 .NET 运行时。Valkey 功能丰富，但配置项多达 100+，运维复杂度远高于 Memcached。</p>
+        <p>DragonflyDB 在公开 benchmark 中确实比 Redis 快，但它用 C++20 的复杂特性实现了一个庞大的系统——其代码量大致是 Memcached 的数倍（量级示意）。Garnet 用 C# 实现，但需要 .NET 运行时。Valkey 功能丰富，但配置项多达 100+（教学示意），运维复杂度远高于 Memcached。</p>
 
         <p>Memcached 的不可替代性在于：</p>
 
