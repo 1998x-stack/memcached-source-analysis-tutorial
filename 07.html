@@ -96,7 +96,7 @@ for (int i = 0; i < 100000; i++) {
         <p>有人可能会说："那就用 jemalloc 或 tcmalloc 啊！"确实，jemalloc 和 tcmalloc 在碎片控制上比 ptmalloc 好得多，但它们仍然无法完全避免碎片问题。而且，它们的通用性也意味着它们对缓存场景没有做任何特殊的优化。</p>
 
         <div class="highlight">
-            <strong>对比实验：</strong>有人做过一个经典的 benchmark：在同样的分配/释放模式（模拟缓存 workload）下运行 1 亿次操作后，ptmalloc 的 RSS 比实际使用量高出 40-60%，jemalloc 高出 15-25%，而 Memcached 的 slab allocator 只高出不到 5%。这 5% 还是 slab 内部固有的 chunk 内部碎片。结论很明确：<strong>对于缓存场景，自定义内存分配器是值得的</strong>。
+            <strong>对比实验（教学示意）：</strong>一个常被引用的对比实验是：在相似的分配/释放模式（模拟缓存 workload）下，ptmalloc 的 RSS 往往比实际使用量高出几十个百分点，jemalloc 高出十几个百分点，而 Memcached 的 slab allocator 只高出百分之几（几乎只剩 chunk 内部碎片）。具体数值随分配模式而异，此处为<em>教学示意</em>的相互对比，用来说明方向而非断言精确比例。结论很明确：<strong>对于缓存场景，自定义内存分配器是值得的</strong>。
         </div>
 
         <figure class="diagram" id="fig-frag">
